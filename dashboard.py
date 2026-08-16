@@ -1,387 +1,384 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import requests
 import time
+import datetime
+import numpy as np
+import pandas as pd
+import requests
+import plotly.graph_objects as go
+import streamlit as st
 
-# ==========================================
-# PAGE CONFIGURATION
-# ==========================================
+from src.research_lab import TenPaperResearchLab
+
 st.set_page_config(
-    page_title="Research Lab — Multi-Asset & Balanced Signal Engine",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="10-Paper Research Lab Terminal", 
+    layout="wide", 
+    initial_sidebar_state="auto"
 )
 
-# Custom Styling to match the UI
+# Persistent Learning Logs in Session State for Self-Evolving Engine
+if "trade_history_log" not in st.session_state:
+    st.session_state.trade_history_log = []
+
+# ==========================================
+# RESPONSIVE & MOBILE-OPTIMIZED STYLING
+# ==========================================
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif !important;
+    }
+    
     .stApp {
-        background-color: #0b0e14;
-        color: #e6edf3;
+        background-color: #080a0f;
+        color: #e2e8f0;
+    }
+
+    section[data-testid="stSidebar"] {
+        background-color: #0d1117 !important;
+        border-right: 1px solid #161b22;
     }
     
-    .card {
-        background-color: #111827;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 15px;
-        height: 100%;
+    .metric-card {
+        background: #111622;
+        border: 1px solid #1e2638;
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        margin-bottom: 8px;
     }
     
-    .metric-title {
-        color: #9ca3af;
-        font-size: 13px;
+    .metric-label {
+        font-size: 12px;
         font-weight: 500;
+        color: #8b949e;
         margin-bottom: 4px;
     }
     
-    .metric-value-green {
-        color: #10b981;
-        font-size: 24px;
-        font-weight: 700;
-    }
+    .metric-value-green { font-size: 20px; font-weight: 700; color: #00e676; }
+    .metric-value-red { font-size: 20px; font-weight: 700; color: #ff5252; }
+    .metric-value-blue { font-size: 20px; font-weight: 700; color: #38bdf8; }
     
-    .metric-value-blue {
-        color: #3b82f6;
-        font-size: 24px;
-        font-weight: 700;
-    }
-    
-    .metric-value-red {
-        color: #ef4444;
-        font-size: 24px;
-        font-weight: 700;
+    @media only screen and (max-width: 768px) {
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        .top-status-bar {
+            font-size: 11px !important;
+            padding: 8px 10px !important;
+            flex-direction: column;
+            align-items: flex-start !important;
+        }
+        .metric-value-green, .metric-value-red, .metric-value-blue {
+            font-size: 18px !important;
+        }
     }
 
-    .robot-box {
-        background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
-        border: 1px solid #3b82f6;
+    div[data-testid="stDataFrame"] {
+        background-color: #111622;
+        border-radius: 12px;
+        border: 1px solid #1e2638;
+        padding: 4px;
+    }
+
+    .top-status-bar {
+        background: #111622;
+        border: 1px solid #1e2638;
         border-radius: 10px;
-        padding: 15px;
+        padding: 10px 16px;
         margin-bottom: 15px;
+        font-weight: 600;
+        font-size: 13px;
+        line-height: 1.5;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# DATA FETCHING ENGINE
-# ==========================================
-def fetch_bybit_klines(symbol="BTCUSDT", interval="15", limit=100):
-    url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={symbol}&interval={interval}&limit={limit}"
-    try:
-        res = requests.get(url, timeout=5).json()
-        if res.get("retCode") == 0 and res.get("result", {}).get("list"):
-            data = res["result"]["list"]
-            df = pd.DataFrame(data, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'Turnover'])
-            df = df.iloc[::-1].reset_index(drop=True)
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'].astype(float), unit='ms')
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                df[col] = df[col].astype(float)
-            return df
-    except Exception:
-        pass
-    return None
-
-def fetch_binance_klines(symbol="BTCUSDT", interval="15m", limit=100):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    try:
-        res = requests.get(url, timeout=5).json()
-        if isinstance(res, list):
-            df = pd.DataFrame(res, columns=['Timestamp', 'Open', 'High', 'Low', 'Close', 'Volume', 'CloseTime', 'QAV', 'NAT', 'TBBAV', 'TBQAV', 'Ignore'])
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], unit='ms')
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                df[col] = df[col].astype(float)
-            return df
-    except Exception:
-        pass
-    return None
-
-def fetch_klines(symbol="BTCUSDT", interval="15m", limit=100):
-    bybit_interval_map = {"1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D"}
-    bybit_tf = bybit_interval_map.get(interval, "15")
-    
-    df = fetch_bybit_klines(symbol, bybit_tf, limit)
-    if df is None or df.empty:
-        df = fetch_binance_klines(symbol, interval, limit)
-    
-    if df is None or df.empty:
-        pd_freq = interval.replace("m", "min") if ("m" in interval and "min" not in interval) else interval
-        times = pd.date_range(end=pd.Timestamp.now(), periods=limit, freq=pd_freq)
-        price = 63000 + np.cumsum(np.random.randn(limit) * 40)
-        df = pd.DataFrame({
-            'Timestamp': times, 'Open': price, 'High': price + 15,
-            'Low': price - 15, 'Close': price + np.random.randn(limit)*4,
-            'Volume': np.random.randint(100, 1000, size=limit)
-        })
-    return df
-
-# ==========================================
 # SIDEBAR CONTROLS
 # ==========================================
-st.sidebar.markdown("## ⚡ Terminal Controls")
+COINS_LIST = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+    "NEARUSDT", "LTCUSDT", "BCHUSDT", "APTUSDT", "TRXUSDT"
+]
 
-selected_symbol = st.sidebar.selectbox("Select Cryptocurrency", ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"])
-tf_map = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "4h": 240}
-selected_tf = st.sidebar.selectbox("Select Timeframe", list(tf_map.keys()), index=2)
-tf_minutes = tf_map[selected_tf]
+TIMEFRAME_MAP = {
+    "1m": ("1m", 1),
+    "5m": ("5m", 5),
+    "10m": ("5m", 10),
+    "15m": ("15m", 15),
+    "30m": ("30m", 30),
+    "1h": ("1h", 60),
+    "4h": ("4h", 240)
+}
 
-forecast_candles = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
+st.sidebar.markdown("### ⚡ Terminal Controls")
+selected_symbol = st.sidebar.selectbox("Select Cryptocurrency", COINS_LIST, index=0)
+selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(TIMEFRAME_MAP.keys()), index=1) # Default 5m
+forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("• 📊 Dashboard")
-st.sidebar.markdown("• 🌐 Multi-Asset Overview")
-st.sidebar.markdown("• 🎯 10-Papers Scoreboard")
-st.sidebar.markdown("• ⚡ Signal Engine")
-st.sidebar.markdown("• 📈 Backtesting")
-st.sidebar.markdown("• 🔔 Alerts")
-st.sidebar.markdown("• ⚙️ Settings")
-
-# ==========================================
-# DATA PROCESSING & METRICS
-# ==========================================
-df = fetch_klines(selected_symbol, selected_tf, limit=80)
-close_price = df['Close'].iloc[-1]
-price_change = df['Close'].iloc[-1] - df['Close'].iloc[-2]
-pct_change = (price_change / df['Close'].iloc[-2]) * 100
-
-atr = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
-beam_target = close_price + (0.8 * atr)
-base_target = close_price - (0.8 * atr)
-
-net_score = -0.008
-signal_text = "STAND ASIDE"
-confidence = 42
-
-lock_seconds = tf_minutes * 60
-current_time_sec = int(time.time())
-time_remaining = lock_seconds - (current_time_sec % lock_seconds)
-mins, secs = divmod(time_remaining, 60)
-
-# ==========================================
-# URDU AI ROBOT ASSISTANT
-# ==========================================
-st.markdown("""
-<div class="robot-box">
-    <div style="display:flex; align-items:center; gap:15px;">
-        <span style="font-size:32px;">🤖🎙️</span>
-        <div>
-            <h4 style="margin:0; color:#60a5fa;">Urdu Voice AI Assistant</h4>
-            <p style="margin:0; font-size:12px; color:#9ca3af;">Aap ki baat Urdu mein sune ga aur Urdu mein bol kar jawab de kar chup ho jaye ga.</p>
-        </div>
-    </div>
-</div>
+st.sidebar.markdown("""
+* 📊 **Dashboard**
+* 🌐 **Multi-Asset Overview**
+* 🔬 **10-Papers Scoreboard**
+* ⚡ **Signal Engine**
+* 🧪 **Backtesting**
+* 🔔 **Alerts**
+* ⚙️ **Settings**
 """, unsafe_allow_html=True)
 
-robot_prompt = st.text_input("🤖 Urdu Voice / Text Input:", placeholder="Jaise: 'Mujhe BTC ki signal update do'")
+st.sidebar.markdown("---")
+st.sidebar.success("🟢 **System Status: Operational**")
 
-urdu_bot_reply = f"Assalam-o-Alaikum! Is waqt {selected_symbol} ki keemat {close_price:,.2f} dollar hai. Signal Stand Aside hai."
-
-if robot_prompt:
-    st.info(f"🤖 **Robot ka Urdu Jawab:** {urdu_bot_reply}")
-
-st.components.v1.html(f"""
-<div style="font-family:sans-serif; color:white;">
-    <button id="start-btn" style="background:#2563eb; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:bold;">
-        🎙️ Urdu Mein Boliye (Mic)
-    </button>
-    <button id="speak-btn" style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:bold; margin-left:10px;">
-        🔊 Jawab Suniye (Urdu Speech)
-    </button>
-    <p id="speech-status" style="font-size:12px; color:#9ca3af; margin-top:5px;"></p>
-</div>
-
-<script>
-    const urduReply = "{urdu_bot_reply}";
-
-    document.getElementById('speak-btn').onclick = function() {{
-        window.speechSynthesis.cancel();
-        var msg = new SpeechSynthesisUtterance(urduReply);
-        msg.lang = 'ur-PK';
-        msg.rate = 0.9;
-        msg.onend = function() {{
-            document.getElementById('speech-status').innerText = "Robot jawab de kar chup ho gaya hai.";
-        }};
-        window.speechSynthesis.speak(msg);
-        document.getElementById('speech-status').innerText = "Robot bol raha hai...";
-    }};
-
-    const startBtn = document.getElementById('start-btn');
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {{
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'ur-PK';
-        
-        startBtn.onclick = function() {{
-            recognition.start();
-            document.getElementById('speech-status').innerText = "Suntay hain... Boliye!";
-        }};
-
-        recognition.onresult = function(event) {{
-            const transcript = event.results[0][0].transcript;
-            document.getElementById('speech-status').innerText = "Aap ne kaha: " + transcript;
-            
-            window.speechSynthesis.cancel();
-            var msg = new SpeechSynthesisUtterance(urduReply);
-            msg.lang = 'ur-PK';
-            msg.onend = function() {{
-                document.getElementById('speech-status').innerText = "Robot jawab de kar chup ho gaya hai.";
-            }};
-            window.speechSynthesis.speak(msg);
-        }};
-    }} else {{
-        startBtn.style.display = 'none';
-    }}
-</script>
-""", height=80)
+api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
 # ==========================================
-# MAIN METRICS TOP CARDS
+# DATA FETCHING
 # ==========================================
-col1, col2, col3, col4, col5 = st.columns(5)
+@st.cache_data(ttl=15)
+def fetch_klines_data(symbol, tf_label, limit=100):
+    binance_tf = "5m" if tf_label == "10m" else tf_label
+    url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
+    try:
+        res = requests.get(url, timeout=5).json()
+        if isinstance(res, dict) and "code" in res:
+            return pd.DataFrame()
+        df = pd.DataFrame(res, columns=['Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_Time', 'QAV', 'NAT', 'TBBAV', 'TBQAV', 'Ignore'])
+        df['Time'] = pd.to_datetime(df['Open_Time'], unit='ms')
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = df[col].astype(float)
+        df.set_index('Time', inplace=True)
+        return df.reset_index()[['Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Open_Time']]
+    except Exception:
+        return pd.DataFrame()
 
-with col1:
-    st.markdown(f"""
-    <div class="card">
-        <div class="metric-title">{selected_symbol}</div>
-        <div class="metric-value-green">${close_price:,.2f}</div>
-        <div style="color:#10b981; font-size:12px;">+{pct_change:.2f}% (24h)</div>
-    </div>
-    """, unsafe_allow_html=True)
+def fetch_order_book_depth(symbol, depth_limit=10):
+    try:
+        url = f"https://data-api.binance.vision/api/v3/depth?symbol={symbol}&limit={depth_limit}"
+        res = requests.get(url, timeout=5).json()
+        if 'bids' in res and 'asks' in res:
+            return np.array(res['bids'], dtype=float), np.array(res['asks'], dtype=float)
+        return np.array([]), np.array([])
+    except Exception:
+        return np.array([]), np.array([])
 
-with col2:
-    st.markdown(f"""
-    <div class="card">
-        <div class="metric-title">Net Score</div>
-        <div class="metric-value-red">{net_score}</div>
-    </div>
-    """, unsafe_allow_html=True)
+df = fetch_klines_data(selected_symbol, selected_tf_label)
+bids, asks = fetch_order_book_depth(selected_symbol)
 
-with col3:
-    st.markdown(f"""
-    <div class="card">
-        <div class="metric-title">Signal</div>
-        <div style="color:#3b82f6; font-size:18px; font-weight:bold; margin-top:5px;">{signal_text}</div>
-    </div>
-    """, unsafe_allow_html=True)
+st.markdown("## ⚡ Research Lab — Multi-Asset Signal Engine")
 
-with col4:
-    st.markdown(f"""
-    <div class="card">
-        <div class="metric-title">Target (BEAM)</div>
-        <div class="metric-value-blue">${beam_target:,.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col5:
-    st.markdown(f"""
-    <div class="card">
-        <div class="metric-title">Confidence</div>
-        <div class="metric-value-green">{confidence}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ==========================================
-# MIDDLE SECTION: EXACT CANDLESTICK CHART & VOLUME
-# ==========================================
-m_col1, m_col2 = st.columns([2.5, 1])
-
-with m_col1:
-    st.markdown(f"### Price Chart ({selected_tf})")
+if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     
-    fig = go.Figure()
+    # ==========================================
+    # ABSOLUTE GLOBAL 5-MIN CANDLE SYNC
+    # ==========================================
+    # Dynamic lock based on timeframe (e.g. 5m = 300s)
+    lock_seconds = tf_minutes * 60
+    current_time_sec = int(time.time())
+    
+    # Universal Candle Bucket Timestamp
+    global_bucket = current_time_sec - (current_time_sec % lock_seconds)
+    time_remaining = lock_seconds - (current_time_sec % lock_seconds)
 
-    # High quality clean Candlestick styling matching reference image
-    fig.add_trace(go.Candlestick(
-        x=df['Timestamp'],
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        name="OHLC",
-        increasing_line_color='#00c853',
-        decreasing_line_color='#ff3d00',
-        increasing_fillcolor='#00c853',
-        decreasing_fillcolor='#ff3d00',
-        whiskerwidth=0.8
-    ))
-
-    # BEAM Dotted Red Line
-    fig.add_hline(
-        y=beam_target, line_dash="dash", line_color="#ff3d00", line_width=1.5,
-        annotation_text=f"BEAM: ${beam_target:,.2f}", annotation_position="top right",
-        annotation_font_color="#ffffff"
-    )
-
-    # BASE Dotted Green Line
-    fig.add_hline(
-        y=base_target, line_dash="dash", line_color="#00c853", line_width=1.5,
-        annotation_text=f"BASE: ${base_target:,.2f}", annotation_position="bottom right",
-        annotation_font_color="#ffffff"
-    )
-
-    # Orange Forecast Target Level Line (matching the yellow/orange line in picture)
-    last_time = df['Timestamp'].iloc[-1]
-    forecast_end = last_time + pd.Timedelta(minutes=tf_minutes * forecast_candles)
-    fig.add_trace(go.Scatter(
-        x=[last_time, forecast_end],
-        y=[close_price, close_price],
-        mode='lines',
-        line=dict(color='#ffab00', width=4),
-        name='Forecast Target'
-    ))
-
-    # Chart Layout Config
-    fig.update_layout(
-        template="plotly_dark",
-        height=480,
-        paper_bgcolor='#0b0e14',
-        plot_bgcolor='#0b0e14',
-        xaxis_rangeslider_visible=False,
-        showlegend=False,
-        margin=dict(l=10, r=20, t=10, b=10),
-        xaxis=dict(
-            type="date", 
-            gridcolor="#1f2937", 
-            showgrid=True,
-            zeroline=False
-        ),
-        yaxis=dict(
-            autorange=True, 
-            fixedrange=False, 
-            gridcolor="#1f2937", 
-            showgrid=True,
-            side="left"
+    # Global Cache Key (Exact same across ALL devices for the current candle)
+    @st.cache_data(ttl=lock_seconds)
+    def get_synced_signal(symbol, tf_label, bucket_id):
+        lab = TenPaperResearchLab()
+        paper_results, final_score, evolved_weights = lab.calculate_all_signals(
+            df, bids, asks, current_inventory=0, performance_history=st.session_state.trade_history_log
         )
-    )
+        close_p = df['Close'].iloc[-1]
+        atr_val = (df['High'] - df['Low']).rolling(14).mean().iloc[-1]
+        beam_level = close_p + (1.8 * atr_val)
+        base_level = close_p - (1.8 * atr_val)
 
-    st.plotly_chart(fig, use_container_width=True)
+        trajectory_dir = "UPSIDE" if final_score >= 0.15 else ("DOWNSIDE" if final_score <= -0.15 else "SIDEWAYS")
 
-with m_col2:
-    st.markdown("### Volume (24h)")
-    
-    vol_fig = go.Figure()
-    vol_fig.add_trace(go.Bar(
-        x=df['Timestamp'].tail(15),
-        y=df['Volume'].tail(15),
-        marker_color='#0091ea'
-    ))
-    
-    vol_fig.update_layout(
-        template="plotly_dark",
-        height=380,
-        paper_bgcolor='#0b0e14',
-        plot_bgcolor='#0b0e14',
-        xaxis_rangeslider_visible=False,
-        showlegend=False,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="#1f2937")
-    )
-    
-    st.plotly_chart(vol_fig, use_container_width=True)
+        return {
+            "score": final_score, "direction": trajectory_dir,
+            "beam": beam_level, "base": base_level,
+            "paper_results": paper_results, "evolved_weights": evolved_weights, "close_price": close_p
+        }
+
+    # Fetch identical signal on every device
+    signal = get_synced_signal(selected_symbol, selected_tf_label, global_bucket)
+
+    # Automatically record outcome history for continuous evolution
+    if len(st.session_state.trade_history_log) == 0 or st.session_state.trade_history_log[-1]["bucket"] != global_bucket:
+        hit_status = True if (signal["direction"] == "UPSIDE" and df['Close'].iloc[-1] > df['Open'].iloc[-1]) else False
+        st.session_state.trade_history_log.append({
+            "bucket": global_bucket,
+            "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+            "direction": signal["direction"],
+            "score": signal["score"],
+            "hit_target": hit_status,
+            "paper_results": signal["paper_results"]
+        })
+
+    mins_rem = time_remaining // 60
+    secs_rem = time_remaining % 60
+
+    # Top Status Bar
+    st.markdown(f"""
+    <div class="top-status-bar">
+        🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:#38bdf8;">{signal['direction']}</span> &nbsp;|&nbsp; 
+        Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
+        ⏳ Candle Close In: <b>{mins_rem}m {secs_rem}s</b>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Responsive Grid Layout
+    m1, m2, m3, m4, m5, m6 = st.columns([1.5, 1, 1, 1, 1, 1])
+    close_val = df['Close'].iloc[-1]
+    prev_val = df['Close'].iloc[-2]
+    pct_change = ((close_val - prev_val) / prev_val) * 100
+
+    with m1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">🟠 {selected_symbol}</div>
+            <div class="metric-value-green">${close_val:,.2f}</div>
+            <div style="font-size:11px; color:#00e676;">+{pct_change:.2f}% (24h)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Net Score</div>
+            <div class="metric-value-red">{signal['score']:+.3f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Signal</div>
+            <div style="font-size:14px; font-weight:700; color:#38bdf8; margin-top:4px;">{signal['direction']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Target (BEAM)</div>
+            <div class="metric-value-blue">${signal['beam']:,.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m5:
+        fig_gauge = go.Figure(go.Pie(
+            values=[42, 58], hole=0.7,
+            marker_colors=['#f59e0b', '#1e2638'],
+            textinfo='none', showlegend=False
+        ))
+        fig_gauge.update_layout(
+            annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)],
+            margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)'
+        )
+        st.markdown('<div class="metric-card"><div class="metric-label">Confidence</div>', unsafe_allow_html=True)
+        st.plotly_chart(fig_gauge, use_container_width=True, config={'displayModeBar': False})
+        st.markdown('</div>', unsafe_allow_html=True)
+    with m6:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Refresh In</div>
+            <div style="font-size:16px; font-weight:700; color:#ffffff; margin-top:4px;">{mins_rem}m {secs_rem}s</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Main Chart Section
+    col_chart, col_side = st.columns([2.5, 1])
+
+    with col_chart:
+        st.subheader(f"Price Chart ({selected_tf_label})")
+        time_delta = pd.Timedelta(minutes=tf_minutes)
+        future_times = [df['Time'].iloc[-1] + (i * time_delta) for i in range(1, forecast_horizon + 1)]
+        t_steps = np.linspace(0, np.pi / 2, forecast_horizon)
+
+        if signal["direction"] == "UPSIDE":
+            forecast_prices = close_val + (signal["beam"] - close_val) * np.sin(t_steps)
+        elif signal["direction"] == "DOWNSIDE":
+            forecast_prices = close_val - (close_val - signal["base"]) * np.sin(t_steps)
+        else:
+            forecast_prices = [close_val] * forecast_horizon
+
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=df['Time'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
+            name="Candles", increasing_line_color='#00e676', decreasing_line_color='#ff5252'
+        ))
+        traj_color = "#00e676" if signal["direction"] == "UPSIDE" else ("#ff5252" if signal["direction"] == "DOWNSIDE" else "#f59e0b")
+        fig.add_trace(go.Scatter(
+            x=[df['Time'].iloc[-1]] + future_times, y=[close_val] + list(forecast_prices), 
+            mode='lines+markers', name="Trajectory", 
+            line=dict(color=traj_color, width=2, dash='dot')
+        ))
+        fig.add_hline(y=signal["beam"], line_dash="dash", line_color="#ff5252", annotation_text=f"BEAM: ${signal['beam']:,.2f}")
+        fig.add_hline(y=signal["base"], line_dash="dash", line_color="#00e676", annotation_text=f"BASE: ${signal['base']:,.2f}")
+        
+        fig.update_layout(
+            template="plotly_dark", height=420, xaxis_rangeslider_visible=False,
+            paper_bgcolor="#111622", plot_bgcolor="#111622",
+            margin=dict(l=5, r=5, t=5, b=5)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col_side:
+        st.subheader("Market Overview (24h)")
+        st.markdown("""
+        <div class="metric-card">
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Market Cap</span> <b>$2.28T <span style="color:#00e676;">+1.25%</span></b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>BTC Dominance</span> <b>52.41% <span style="color:#ff5252;">-0.38%</span></b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Fear & Greed</span> <b>72 (Greed)</b></div>
+            <div style="display:flex; justify-content:space-between;"><span>Funding Rate</span> <b>0.0102%</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.subheader("Volume Trend")
+        fig_vol = go.Figure(go.Bar(x=list(range(10)), y=np.random.randint(20, 80, 10), marker_color='#38bdf8'))
+        fig_vol.update_layout(height=120, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='#111622', plot_bgcolor='#111622', xaxis_visible=False)
+        st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
+
+    # Bottom Row
+    b1, b2, b3 = st.columns([1.2, 1, 1.2])
+
+    with b1:
+        st.subheader("🔬 10-Papers Scoreboard")
+        paper_df = pd.DataFrame([
+            {
+                "Paper": k, 
+                "Signal Value": f"{v:+.3f}", 
+                "Evolved Weight": f"{signal['evolved_weights'][k]*100:.1f}%",
+                "Status": "PASS🟢" if v > 0.1 else ("FAIL🔴" if v < -0.1 else "NEUTRAL⚪")
+            }
+            for k, v in signal["paper_results"].items()
+        ])
+        st.dataframe(paper_df, use_container_width=True, hide_index=True, height=240)
+
+    with b2:
+        st.subheader("Signal Summary")
+        fig_summary = go.Figure(go.Pie(
+            labels=['Pass', 'Neutral', 'Fail'], values=[4, 4, 2], hole=0.6,
+            marker_colors=['#00e676', '#8b949e', '#ff5252']
+        ))
+        fig_summary.update_layout(height=220, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='#111622', showlegend=True)
+        st.plotly_chart(fig_summary, use_container_width=True, config={'displayModeBar': False})
+
+    with b3:
+        st.subheader("⚡ Key Metrics & Orderbook")
+        st.markdown("""
+        <div class="metric-card" style="height:240px;">
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Auto Refresh loop (Smooth sync refresh every 10 seconds)
+time.sleep(10)
+st.rerun()
