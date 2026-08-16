@@ -146,7 +146,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         beam_level = close_p + (1.8 * atr_val)
         base_level = close_p - (1.8 * atr_val)
         
-        # Replaced UPSIDE -> LONG, DOWNSIDE -> SHORT, SIDEWAYS -> NEUTRAL
         trajectory_dir = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
 
         return {
@@ -171,7 +170,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
 
-    # Color code for status bar direction text
     dir_color = "#00e676" if signal['direction'] == "LONG" else ("#ff5252" if signal['direction'] == "SHORT" else "#38bdf8")
 
     st.markdown(f"""
@@ -187,7 +185,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     prev_val = df['Close'].iloc[-2]
     pct_change = ((close_val - prev_val) / prev_val) * 100
 
-    # Medium size set for signal text (font-size:16px)
     signal_card_color = "#00e676" if signal["direction"] == "LONG" else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
 
     with m1:
@@ -197,7 +194,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
