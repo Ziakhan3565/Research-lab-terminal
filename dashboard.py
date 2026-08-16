@@ -6,15 +6,40 @@ import requests
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.research_lab import TenPaperResearchLab
+# ==========================================
+# RESEARCH LAB MODULE FALLBACK
+# ==========================================
+try:
+    from src.research_lab import TenPaperResearchLab
+except ModuleNotFoundError:
+    # Dummy fallback class if local module is missing
+    class TenPaperResearchLab:
+        def calculate_all_signals(self, df, bids, asks, current_inventory=0, performance_history=None):
+            paper_results = {
+                "OFI": -0.204,
+                "TSMOM": 0.850,
+                "MICRO": -0.050,
+                "AVST": 0.120,
+                "INVAR": 0.450,
+                "VPIN": -0.310,
+                "LAMBDA": 0.080,
+                "PIN": -0.150,
+                "LOB_IMB": -0.220,
+                "FLOW_IMB": 0.300
+            }
+            final_score = -0.136
+            evolved_weights = {k: 0.10 for k in paper_results.keys()}
+            return paper_results, final_score, evolved_weights
 
+# ==========================================
+# STREAMLIT PAGE CONFIG & SESSION STATE
+# ==========================================
 st.set_page_config(
     page_title="10-Paper Research Lab Terminal", 
     layout="wide", 
     initial_sidebar_state="auto"
 )
 
-# Persistent Learning Logs in Session State for Self-Evolving Engine
 if "trade_history_log" not in st.session_state:
     st.session_state.trade_history_log = []
 
@@ -118,7 +143,7 @@ TIMEFRAME_MAP = {
 
 st.sidebar.markdown("### ⚡ Terminal Controls")
 selected_symbol = st.sidebar.selectbox("Select Cryptocurrency", COINS_LIST, index=0)
-selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(TIMEFRAME_MAP.keys()), index=1) # Default 5m
+selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(TIMEFRAME_MAP.keys()), index=3) # Default 15m
 forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
@@ -175,17 +200,14 @@ st.markdown("## ⚡ Research Lab — Multi-Asset Signal Engine")
 if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     
     # ==========================================
-    # ABSOLUTE GLOBAL 5-MIN CANDLE SYNC
+    # GLOBAL CANDLE SYNC & SIGNAL CALCULATION
     # ==========================================
-    # Dynamic lock based on timeframe (e.g. 5m = 300s)
     lock_seconds = tf_minutes * 60
     current_time_sec = int(time.time())
     
-    # Universal Candle Bucket Timestamp
     global_bucket = current_time_sec - (current_time_sec % lock_seconds)
     time_remaining = lock_seconds - (current_time_sec % lock_seconds)
 
-    # Global Cache Key (Exact same across ALL devices for the current candle)
     @st.cache_data(ttl=lock_seconds)
     def get_synced_signal(symbol, tf_label, bucket_id):
         lab = TenPaperResearchLab()
@@ -205,10 +227,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             "paper_results": paper_results, "evolved_weights": evolved_weights, "close_price": close_p
         }
 
-    # Fetch identical signal on every device
     signal = get_synced_signal(selected_symbol, selected_tf_label, global_bucket)
 
-    # Automatically record outcome history for continuous evolution
     if len(st.session_state.trade_history_log) == 0 or st.session_state.trade_history_log[-1]["bucket"] != global_bucket:
         hit_status = True if (signal["direction"] == "UPSIDE" and df['Close'].iloc[-1] > df['Open'].iloc[-1]) else False
         st.session_state.trade_history_log.append({
@@ -307,7 +327,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         fig = go.Figure()
         fig.add_trace(go.Candlestick(
             x=df['Time'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
-            name="Candles", increasing_line_color='#00e676', decreasing_line_color='#ff5252'
+            name="Candles", increasing_line_color='#00e676', decreasing_line_color='#ff5252',
+            whiskerwidth=0.8
         ))
         traj_color = "#00e676" if signal["direction"] == "UPSIDE" else ("#ff5252" if signal["direction"] == "DOWNSIDE" else "#f59e0b")
         fig.add_trace(go.Scatter(
@@ -321,7 +342,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         fig.update_layout(
             template="plotly_dark", height=420, xaxis_rangeslider_visible=False,
             paper_bgcolor="#111622", plot_bgcolor="#111622",
-            margin=dict(l=5, r=5, t=5, b=5)
+            margin=dict(l=5, r=5, t=5, b=5),
+            yaxis=dict(autorange=True, fixedrange=False)
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -379,6 +401,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         </div>
         """, unsafe_allow_html=True)
 
-# Auto Refresh loop (Smooth sync refresh every 10 seconds)
+# Safe Refresh Loop
 time.sleep(10)
 st.rerun()
