@@ -261,7 +261,7 @@ st.components.v1.html(f"""
 """, height=90)
 
 # ==========================================
-# MAIN DASHBOARD HEADER & TOP CARDS (PICTURE EXACT MATCH)
+# MAIN DASHBOARD HEADER & TOP CARDS
 # ==========================================
 st.markdown("## ⚡ Research Lab — Multi-Asset & Balanced Signal Engine")
 
@@ -321,44 +321,62 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==========================================
 # MIDDLE SECTION: CHART + MARKET OVERVIEW
 # ==========================================
-m_col1, m_col2 = st.columns([2.5, 1])
+m_col1, m_col2 = st.columns([2.6, 1])
 
 with m_col1:
     st.markdown(f"### Price Chart ({selected_tf})")
     
     fig = make_subplots(rows=1, cols=1)
+    
+    # Balanced & Proportional Candlestick Chart
     fig.add_trace(go.Candlestick(
-        x=df['Timestamp'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        increasing_line_color='#10b981', decreasing_line_color='#ef4444'
+        x=df['Timestamp'],
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name="OHLC",
+        increasing_line_color='#10b981',
+        decreasing_line_color='#ef4444',
+        increasing_fillcolor='#10b981',
+        decreasing_fillcolor='#ef4444'
     ))
     
+    # Target Lines
     fig.add_hline(y=beam_target, line_dash="dash", line_color="#ef4444", annotation_text=f"BEAM: ${beam_target:,.2f}")
     fig.add_hline(y=base_target, line_dash="dash", line_color="#10b981", annotation_text=f"BASE: ${base_target:,.2f}")
 
+    # Layout & Scaling Fixes for Balanced Candles
     fig.update_layout(
-        template="plotly_dark", height=380,
-        paper_bgcolor='#111827', plot_bgcolor='#111827',
-        margin=dict(l=10, r=10, t=20, b=10)
+        template="plotly_dark",
+        height=450,
+        paper_bgcolor='#111827',
+        plot_bgcolor='#111827',
+        xaxis_rangeslider_visible=False,  # Range slider removed to fix squeeze
+        margin=dict(l=20, r=20, t=20, b=20),
+        xaxis=dict(type="date", gridcolor="#1f2937"),
+        yaxis=dict(autorange=True, fixedrange=False, gridcolor="#1f2937")
     )
+    
     st.plotly_chart(fig, use_container_width=True)
 
 with m_col2:
     st.markdown("### Market Overview (24h)")
     st.markdown("""
     <div class="card">
-        <div style="display:flex; justify-between; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
             <span style="color:#9ca3af;">Market Cap</span>
             <span style="color:white; font-weight:bold;">$2.28T <span style="color:#10b981;">+1.25%</span></span>
         </div>
-        <div style="display:flex; justify-between; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
             <span style="color:#9ca3af;">BTC Dominance</span>
             <span style="color:white; font-weight:bold;">52.41% <span style="color:#ef4444;">-0.38%</span></span>
         </div>
-        <div style="display:flex; justify-between; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
             <span style="color:#9ca3af;">Fear & Greed Index</span>
             <span style="color:white; font-weight:bold;">72 (Greed)</span>
         </div>
-        <div style="display:flex; justify-between; margin-bottom:15px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:15px;">
             <span style="color:#9ca3af;">Funding Rate</span>
             <span style="color:white; font-weight:bold;">0.0102%</span>
         </div>
