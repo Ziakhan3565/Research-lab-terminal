@@ -145,7 +145,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         atr_val = (df_in['High'] - df_in['Low']).rolling(14).mean().iloc[-1]
         beam_level = close_p + (1.8 * atr_val)
         base_level = close_p - (1.8 * atr_val)
-        trajectory_dir = "UPSIDE" if final_score >= 0.15 else ("DOWNSIDE" if final_score <= -0.15 else "SIDEWAYS")
+        
+        # Replaced UPSIDE -> LONG, DOWNSIDE -> SHORT, SIDEWAYS -> NEUTRAL
+        trajectory_dir = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
 
         return {
             "score": final_score, "direction": trajectory_dir,
@@ -169,9 +171,12 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
 
+    # Color code for status bar direction text
+    dir_color = "#00e676" if signal['direction'] == "LONG" else ("#ff5252" if signal['direction'] == "SHORT" else "#38bdf8")
+
     st.markdown(f"""
     <div class="top-status-bar">
-        🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:#38bdf8;">{signal['direction']}</span> &nbsp;|&nbsp; 
+        🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
         Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
         ⏳ Candle Close In: <b>{mins_rem}m {secs_rem}s</b>
     </div>
@@ -182,14 +187,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     prev_val = df['Close'].iloc[-2]
     pct_change = ((close_val - prev_val) / prev_val) * 100
 
+    # Medium size set for signal text (font-size:16px)
+    signal_card_color = "#00e676" if signal["direction"] == "LONG" else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
+
     with m1:
         st.markdown(f'<div class="metric-card"><div class="metric-label">🟠 {selected_symbol}</div><div class="metric-value-green">${close_val:,.2f}</div><div style="font-size:11px; color:#00e676;">+{pct_change:.2f}% (24h)</div></div>', unsafe_allow_html=True)
     with m2:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Net Score</div><div class="metric-value-red">{signal["score"]:+.3f}</div></div>', unsafe_allow_html=True)
     with m3:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:14px; font-weight:700; color:#38bdf8; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -207,9 +215,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         future_times = [df['Time'].iloc[-1] + (i * time_delta) for i in range(1, forecast_horizon + 1)]
         t_steps = np.linspace(0, np.pi / 2, forecast_horizon)
 
-        if signal["direction"] == "UPSIDE":
+        if signal["direction"] == "LONG":
             forecast_prices = close_val + (signal["beam"] - close_val) * np.sin(t_steps)
-        elif signal["direction"] == "DOWNSIDE":
+        elif signal["direction"] == "SHORT":
             forecast_prices = close_val - (close_val - signal["base"]) * np.sin(t_steps)
         else:
             forecast_prices = [close_val] * forecast_horizon
@@ -219,7 +227,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             x=df['Time'], open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
             name="Candles", increasing_line_color='#00e676', decreasing_line_color='#ff5252'
         ))
-        traj_color = "#00e676" if signal["direction"] == "UPSIDE" else ("#ff5252" if signal["direction"] == "DOWNSIDE" else "#f59e0b")
+        traj_color = "#00e676" if signal["direction"] == "LONG" else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
         fig.add_trace(go.Scatter(
             x=[df['Time'].iloc[-1]] + future_times, y=[close_val] + list(forecast_prices), 
             mode='lines+markers', name="Trajectory", line=dict(color=traj_color, width=2, dash='dot')
