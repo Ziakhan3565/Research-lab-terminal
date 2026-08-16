@@ -125,7 +125,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     global_bucket = current_time_sec - (current_time_sec % lock_seconds)
     time_remaining = lock_seconds - (current_time_sec % lock_seconds)
 
-    # UN-CACHED DIRECT COMPUTATION TO PREVENT HASHING ERRORS
     def compute_signal(df_in, bids_in, asks_in, history):
         lab = TenPaperResearchLab()
         try:
@@ -157,7 +156,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     signal = compute_signal(df, bids, asks, st.session_state.trade_history_log)
 
     if len(st.session_state.trade_history_log) == 0 or st.session_state.trade_history_log[-1]["bucket"] != global_bucket:
-        hit_status = True if (signal["direction"] == "UPSIDE" and df['Close'].iloc[-1] > df['Open'].iloc[-1]) else False
         st.session_state.trade_history_log.insert(0, {
             "bucket": global_bucket,
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -171,7 +169,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
 
-    # Top Status Bar
     st.markdown(f"""
     <div class="top-status-bar">
         🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:#38bdf8;">{signal['direction']}</span> &nbsp;|&nbsp; 
@@ -180,7 +177,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     </div>
     """, unsafe_allow_html=True)
 
-    # Metrics Layout
     m1, m2, m3, m4, m5, m6 = st.columns([1.5, 1, 1, 1, 1, 1])
     close_val = df['Close'].iloc[-1]
     prev_val = df['Close'].iloc[-2]
@@ -193,7 +189,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:14px; font-weight:700; color:#38bdf8; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -203,7 +199,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m6:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Refresh In</div><div style="font-size:16px; font-weight:700; color:#ffffff; margin-top:4px;">{mins_rem}m {secs_rem}s</div></div>', unsafe_allow_html=True)
 
-    # Chart & Overview
     col_chart, col_side = st.columns([2.5, 1])
 
     with col_chart:
@@ -244,7 +239,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         fig_vol.update_layout(height=120, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='#111622', plot_bgcolor='#111622', xaxis_visible=False)
         st.plotly_chart(fig_vol, use_container_width=True, config={'displayModeBar': False})
 
-    # Bottom Row
     b1, b2, b3 = st.columns([1.2, 1, 1.2])
 
     with b1:
@@ -270,7 +264,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.subheader("⚡ Key Metrics & Orderbook")
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
 
-    # Added Saved Signal History Log Section at the Bottom
     st.markdown("---")
     st.subheader("⚡ Saved Signal History Log")
     if st.session_state.trade_history_log:
@@ -279,6 +272,5 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     else:
         st.info("No signal history logged yet.")
 
-# Smooth refresh
 time.sleep(10)
 st.rerun()
