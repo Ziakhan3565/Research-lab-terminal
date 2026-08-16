@@ -5,8 +5,22 @@ class TenPaperResearchLab:
     def __init__(self, target_vol=0.15):
         self.target_vol = target_vol
 
-    def calculate_all_signals(self, df, bids, asks, current_inventory=0):
+    def calculate_all_signals(self, df, bids, asks, current_inventory=0, performance_history=None):
         results = {}
+        
+        # Safe checks for empty or malformed inputs
+        if len(bids) == 0 or len(asks) == 0 or df.empty or len(df) < 5:
+            default_results = {
+                'OFI': 0.0, 'TSMOM': 0.0, 'MICRO': 0.0, 'QUEUE': 0.0,
+                'AVST': 0.0, 'INVAR': 0.0, 'VPIN': 0.0, 'VRATIO': 0.0,
+                'BURST': 0.0, 'FUND': 0.0
+            }
+            default_weights = {
+                'OFI': 0.15, 'TSMOM': 0.15, 'MICRO': 0.12, 'QUEUE': 0.10,
+                'AVST': 0.08, 'INVAR': 0.08, 'VPIN': 0.08, 'VRATIO': 0.08,
+                'BURST': 0.08, 'FUND': 0.08
+            }
+            return default_results, 0.0, default_weights
         
         # 1. OFI (Order Flow Imbalance) - Cont et al. (2014)
         bid_vol = np.sum(bids[:, 1])
@@ -71,4 +85,4 @@ class TenPaperResearchLab:
         
         final_score = sum(results[paper] * weights[paper] for paper in results)
         
-        return results, final_score
+        return results, final_score, weights
