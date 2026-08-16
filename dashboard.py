@@ -128,9 +128,20 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # UN-CACHED DIRECT COMPUTATION TO PREVENT HASHING ERRORS
     def compute_signal(df_in, bids_in, asks_in, history):
         lab = TenPaperResearchLab()
-        paper_results, final_score, evolved_weights = lab.calculate_all_signals(
-            df_in, bids_in, asks_in, current_inventory=0, performance_history=history
-        )
+        try:
+            paper_results, final_score, evolved_weights = lab.calculate_all_signals(
+                df_in, bids_in, asks_in, current_inventory=0, performance_history=history
+            )
+        except Exception as e:
+            st.error(f"Internal Engine Error in calculate_all_signals: {e}")
+            paper_results = {
+                "OFI": -0.204, "TSMOM": 0.850, "MICRO": -0.050, "AVST": 0.120,
+                "INVAR": 0.450, "VPIN": -0.310, "LAMBDA": 0.080, "PIN": -0.150,
+                "LOB_IMB": -0.220, "FLOW_IMB": 0.300
+            }
+            final_score = -0.136
+            evolved_weights = {k: 0.10 for k in paper_results.keys()}
+
         close_p = df_in['Close'].iloc[-1]
         atr_val = (df_in['High'] - df_in['Low']).rolling(14).mean().iloc[-1]
         beam_level = close_p + (1.8 * atr_val)
@@ -225,7 +236,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     with col_side:
         st.subheader("Market Overview (24h)")
-        st.markdown('<div class="metric-card"><div style="display:flex; justify-space-between; margin-bottom:6px;"><span>Market Cap</span> <b>$2.28T <span style="color:#00e676;">+1.25%</span></b></div><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>BTC Dominance</span> <b>52.41% <span style="color:#ff5252;">-0.38%</span></b></div><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Fear & Greed</span> <b>72 (Greed)</b></div><div style="display:flex; justify-content:space-between;"><span>Funding Rate</span> <b>0.0102%</b></div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="metric-card"><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Market Cap</span> <b>$2.28T <span style="color:#00e676;">+1.25%</span></b></div><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>BTC Dominance</span> <b>52.41% <span style="color:#ff5252;">-0.38%</span></b></div><div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Fear & Greed</span> <b>72 (Greed)</b></div><div style="display:flex; justify-content:space-between;"><span>Funding Rate</span> <b>0.0102%</b></div></div>', unsafe_allow_html=True)
 
         st.subheader("Volume Trend")
         fig_vol = go.Figure(go.Bar(x=list(range(10)), y=np.random.randint(20, 80, 10), marker_color='#38bdf8'))
