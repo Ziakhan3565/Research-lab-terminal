@@ -84,8 +84,10 @@ def fetch_klines(symbol="BTCUSDT", interval="15m", limit=200):
         df = fetch_binance_klines(symbol, interval, limit)
     
     if df is None or df.empty:
-        # Fallback dummy data generation in case both APIs fail
-        times = pd.date_range(end=pd.Timestamp.now(), periods=limit, freq=interval)
+        # PANDAS FREQUENCY FIX: "15m" -> "15min"
+        pd_freq = interval.replace("m", "min") if ("m" in interval and "min" not in interval) else interval
+        times = pd.date_range(end=pd.Timestamp.now(), periods=limit, freq=pd_freq)
+        
         price = 60000 + np.cumsum(np.random.randn(limit) * 50)
         df = pd.DataFrame({
             'Timestamp': times,
