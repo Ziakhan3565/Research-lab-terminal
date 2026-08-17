@@ -8,6 +8,27 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 
+import streamlit as st
+
+# Yeh function yahan paste kar dein:
+def get_exchange_connection(exchange_name, api_key, api_secret, mode):
+    exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
+
+    if exchange_name not in exchanges:
+        return None
+
+    exchange_class = exchanges[exchange_name]
+    exchange = exchange_class({
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+    })
+
+    if mode == "Paper Trading" and exchange_name in ["bybit", "binance"]:
+        exchange.set_sandbox_mode(True)
+
+    return exchange
+
 # ==========================================
 # RESEARCH LAB MODULE & RISK ENGINE FALLBACK
 # ==========================================
@@ -543,87 +564,54 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         "⚡ Execute Trade Order", use_container_width=True, type="primary"
     )
 
-  # ==========================================
-  # EXECUTION BUTTON LOGIC
-  # ==========================================
-  if execute_btn:
-    # 1. Determine Direction & Calculations
-    if auto_trade_mode:
-      direction_tag = (
-          signal["direction"]
-          if "signal" in locals() and signal.get("direction")
-          else "LONG"
-      )
-      if direction_tag == "NEUTRAL":
-        direction_tag = "LONG"
-    else:
-      direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+ if execute_btn:
+  # 1. Exchange connection fetch karein
+  active_exchange = get_exchange_connection(
+      exchange_name, api_key, api_secret, trading_mode
+  )
 
-    # Fallback agar close_val defined na ho
-    entry_p = close_val if "close_val" in locals() else 0.0
-    if entry_p <= 0:
-      entry_p = 1.0  # Safe fallback
+  # 2. Direction set karein
+  if auto_trade_mode:
+    direction_tag = (
+        signal["direction"]
+        if "signal" in locals() and signal.get("direction")
+        else "LONG"
+    )
+    if direction_tag == "NEUTRAL":
+      direction_tag = "LONG"
+  else:
+    direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
 
-    qty = (order_size_usdt * leverage_val) / entry_p
+  entry_p = close_val if "close_val" in locals() else 1.0
+  qty = (order_size_usdt * leverage_val) / entry_p
 
-    # SL and TP Price Calculations
-    if direction_tag == "LONG":
-      stop_loss_price = entry_p * (1 - sl_pct / 100)
-      take_profit_price = entry_p * (1 + tp_pct / 100)
-    else:
-      stop_loss_price = entry_p * (1 + sl_pct / 100)
-      take_profit_price = entry_p * (1 - tp_pct / 100)
-
-    exchange_executed = False
-    execution_msg = ""
-
-    # 2. Live Exchange Execution Check
-    if (
-        "trading_mode" in locals()
-        and trading_mode == "Live/Real"
-        and "api_key" in locals()
-        and api_key
-        and "api_secret" in locals()
-        and api_secret
-    ):
+  try:
+    if trading_mode == "Live/Real" and active_exchange:
+      # Real Exchange Order
+      active_exchange.load_markets()
       try:
-        EXCHANGE_CLASS = getattr(ccxt, exchange_name)
-        ex_inst = EXCHANGE_CLASS({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-        })
-        ex_inst.load_markets()
-        try:
-          ex_inst.set_leverage(leverage_val, selected_symbol)
-        except Exception:
-          pass
+        active_exchange.set_leverage(leverage_val, selected_symbol)
+      except Exception:
+        pass
 
-        side_str = "buy" if direction_tag == "LONG" else "sell"
-
-        # Placing main market order
-        order_res = ex_inst.create_market_order(selected_symbol, side_str, qty)
-
-        # Parameters for SL and TP
-        params = {
-            "stopLossPrice": round(stop_loss_price, 2),
-            "takeProfitPrice": round(take_profit_price, 2),
-        }
-
-        execution_msg = (
-            f"Live Order Successful! ID: {order_res.get('id', 'N/A')} | SL:"
-            f" ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
-        )
-        exchange_executed = True
-      except Exception as e:
-        execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
-    else:
-      # Paper Mode Simulation Message
-      execution_msg = (
-          f"Paper Trade Simulated! Dir: {direction_tag} | Entry:"
-          f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
-          f" ${take_profit_price:,.2f}"
+      side_str = "buy" if direction_tag == "LONG" else "sell"
+      order_res = active_exchange.create_market_order(
+          selected_symbol, side_str, qty
       )
+      st.success(
+          f"Live Order Successful on {exchange_name.upper()}! ID:"
+          f" {order_res.get('id', 'N/A')}"
+      )
+    else:
+      # Paper Trading / Simulation Mode
+      st.info(
+          f"Paper Trade Simulated on {exchange_name.upper()}! Dir:"
+          f" {direction_tag} | Entry: ${entry_p:,.2f}"
+      )
+  except Exception as e:
+    st.error(
+        f"Trade Execution Failed on {exchange_name.upper()}: {str(e)}"
+    )
 
     # Display Status on Streamlit Dashboard
     if exchange_executed:
