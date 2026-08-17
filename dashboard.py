@@ -120,7 +120,7 @@ st.sidebar.success("🟢 **System Status: Multi-Coin Scanner Active**")
 api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
 # ==========================================
-# DATA FETCHING HELPERS
+# DATA FETCHING HELPERS (OPTIMIZED WITH CACHE)
 # ==========================================
 @st.cache_data(ttl=15)
 def fetch_klines_data(symbol, tf_label, limit=100):
@@ -139,6 +139,7 @@ def fetch_klines_data(symbol, tf_label, limit=100):
     except Exception:
         return pd.DataFrame()
 
+@st.cache_data(ttl=5)
 def fetch_order_book_depth(symbol, depth_limit=10):
     try:
         url = f"https://data-api.binance.vision/api/v3/depth?symbol={symbol}&limit={depth_limit}"
@@ -537,6 +538,3 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.dataframe(history_df, use_container_width=True, hide_index=True, height=320)
     else:
         st.info("No signal history logged yet.")
-
-time.sleep(10)
-st.rerun()
