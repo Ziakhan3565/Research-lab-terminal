@@ -5,6 +5,7 @@ import ccxt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 import streamlit as st
 
 # ==========================================
@@ -432,23 +433,32 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
   with m1:
     st.markdown(
-        f'<div class="metric-card"><div class="metric-label">🟠 {selected_symbol}</div><div class="metric-value-green">${close_val:,.2f}</div><div style="font-size:11px; color:#00e676;">+{pct_change:.2f}% (24h)</div></div>',
+        f'<div class="metric-card"><div class="metric-label">🟠'
+        f" {selected_symbol}</div><div"
+        f' class="metric-value-green">${close_val:,.2f}</div><div'
+        f' style="font-size:11px; color:#00e676;">+{pct_change:.2f}%'
+        " (24h)</div></div>",
         unsafe_allow_html=True,
     )
   with m2:
     st.markdown(
-        f'<div class="metric-card"><div class="metric-label">Net Score</div><div class="metric-value-red">{signal["score"]:+.3f}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">Net'
+        f' Score</div><div'
+        f' class="metric-value-red">{signal["score"]:+.3f}</div></div>',
         unsafe_allow_html=True,
     )
   with m3:
     st.markdown(
-        f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">Signal</div><div'
+        f' style="font-size:16px; font-weight:700; color:{signal_card_color};'
+        f' margin-top:4px;">{signal["direction"]}</div></div>',
         unsafe_allow_html=True,
     )
   with m4:
     beam_val_str = f"${signal['beam']:,.2f}"
     st.markdown(
-        f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">Target'
+        f' (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>',
         unsafe_allow_html=True,
     )
   with m5:
@@ -486,12 +496,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     st.markdown("</div>", unsafe_allow_html=True)
   with m6:
     st.markdown(
-        f'<div class="metric-card"><div class="metric-label">Reset In</div><div style="font-size:16px; font-weight:700; color:#ffffff; margin-top:4px;">{mins_rem}m {secs_rem}s</div></div>',
+        f'<div class="metric-card"><div class="metric-label">Reset In</div><div'
+        f' style="font-size:16px; font-weight:700; color:#ffffff;'
+        f' margin-top:4px;">{mins_rem}m {secs_rem}s</div></div>',
         unsafe_allow_html=True,
     )
 
   # ==========================================
-  # TRADE EXECUTION PANEL (Naya Add Kiya Gaya Section)
+  # TRADE EXECUTION PANEL
   # ==========================================
   st.markdown("---")
   st.subheader("🚀 Live / Paper Trade Execution Panel")
@@ -518,7 +530,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     entry_p = close_val
     qty = (order_size_usdt * leverage_val) / entry_p
 
-    # Agar Live Mode chuna hai aur credentials hain toh CCXT se order place karne ki koshish karein
     exchange_executed = False
     execution_msg = ""
 
@@ -531,7 +542,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             "enableRateLimit": True,
         })
         ex_inst.load_markets()
-        # Set leverage if supported
         try:
           ex_inst.set_leverage(leverage_val, selected_symbol)
         except Exception:
@@ -549,7 +559,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
       except Exception as e:
         execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
 
-    # Session log mein save karein
     new_trade = {
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "symbol": selected_symbol,
@@ -571,7 +580,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
           f" ${entry_p:,.2f} with {leverage_val}x Leverage!"
       )
 
-  # Active Trades Table View
   if st.session_state.active_trades_log:
     st.markdown("#### 📂 Active / Executed Trades Log")
     df_active = pd.DataFrame(st.session_state.active_trades_log)
@@ -687,7 +695,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     st.subheader("Market Overview (24h)")
     st.markdown(
         '<div class="metric-card"><div style="display:flex;'
-        " justify-content:space-between; margin-bottom:6px;"><span>Market"
+        ' justify-content:space-between; margin-bottom:6px;"><span>Market'
         ' Cap</span> <b>$2.28T <span style="color:#00e676;">+1.25%</span></b></div><div'
         ' style="display:flex; justify-content:space-between;'
         ' margin-bottom:6px;"><span>BTC Dominance</span> <b>52.41% <span'
@@ -696,7 +704,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         ' margin-bottom:6px;"><span>Fear & Greed</span> <b>72'
         ' (Greed)</b></div><div style="display:flex;'
         ' justify-content:space-between;"><span>Funding Rate</span>'
-        " <b>0.0102%</b></div></div>",
+        ' <b>0.0102%</b></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -776,7 +784,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         ' style="color:#ff5252;">-0.165</b></div><div style="display:flex;'
         ' justify-content:space-between; padding:4px 0;"><span>Liquidity'
         ' Score</span> <b style="color:#f59e0b;">58 /'
-        " 100</b></div></div>",
+        ' 100</b></div></div>',
         unsafe_allow_html=True,
     )
 
@@ -1029,3 +1037,4 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
   else:
     st.info("No signal history logged yet.")
+  
