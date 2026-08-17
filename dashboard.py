@@ -185,7 +185,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # AUTO 1:2 RISK-REWARD OUTCOME CHECKER
     # ==========================================
     def check_auto_outcome(entry_price, current_price, direction, sl_distance):
-        # 1:2 Risk Reward Ratio (TP is double of SL distance)
         tp_distance = sl_distance * 2
         
         if direction == "LONG":
@@ -200,9 +199,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 return "LOSS"
         return "PENDING"
 
-    # Automatically evaluate pending trades based on current live price
     atr_current = (df['High'] - df['Low']).mean()
-    sl_dist_default = atr_current * 1.0 # Stop loss distance based on ATR
+    sl_dist_default = atr_current * 1.0
 
     history_updated = False
     for item in st.session_state.trade_history_log:
@@ -215,7 +213,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if history_updated:
         save_persistent_history(st.session_state.trade_history_log)
 
-    # Insert new signal if not present
     existing_buckets = [item.get("bucket") for item in st.session_state.trade_history_log]
     if global_bucket not in existing_buckets:
         new_entry = {
@@ -425,40 +422,16 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_m}</div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # HISTORY LOG TABLE & MANUAL OVERRIDE (Optional)
+    # SAVED SIGNAL HISTORY LOG (FULL WIDTH)
     # ==========================================
     st.markdown("---")
-    c_log1, c_log2 = st.columns([1.5, 1])
-
-    with c_log1:
-        st.subheader("⚡ Saved Signal History Log (Auto Tracked)")
-        if st.session_state.trade_history_log:
-            history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
-            history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price', 'outcome']]
-            st.dataframe(history_df, use_container_width=True, hide_index=True, height=220)
-        else:
-            st.info("No signal history logged yet.")
-
-    with c_log2:
-        st.subheader("🎯 Manual Override (Optional)")
-        if st.session_state.trade_history_log:
-            recent_signals = st.session_state.trade_history_log[:15]
-            selected_idx = st.selectbox(
-                "Select Signal to Modify", 
-                range(len(recent_signals)), 
-                format_func=lambda i: f"[{recent_signals[i]['symbol']}] {recent_signals[i]['timestamp']} ({recent_signals[i]['direction']}) - {recent_signals[i]['outcome']}",
-                key="update_signal_selectbox"
-            )
-            
-            new_outcome = st.radio("Override Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True, key="update_outcome_radio")
-            
-            if st.button("Save Override Update", use_container_width=True, key="save_outcome_btn"):
-                st.session_state.trade_history_log[selected_idx]['outcome'] = new_outcome
-                save_persistent_history(st.session_state.trade_history_log)
-                st.success(f"Outcome successfully updated to {new_outcome}!")
-                st.rerun()
-        else:
-            st.write("No signals available to update.")
+    st.subheader("⚡ Saved Signal History Log (Auto Tracked)")
+    if st.session_state.trade_history_log:
+        history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
+        history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price', 'outcome']]
+        st.dataframe(history_df, use_container_width=True, hide_index=True, height=280)
+    else:
+        st.info("No signal history logged yet.")
 
 time.sleep(10)
 st.rerun()
