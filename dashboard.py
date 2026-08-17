@@ -1,3 +1,4 @@
+import os
 import time
 import datetime
 import numpy as np
@@ -24,7 +25,7 @@ except ModuleNotFoundError:
             return paper_results, final_score, evolved_weights
 
 # ==========================================
-# STREAMLIT PAGE CONFIG & SESSION STATE
+# STREAMLIT PAGE CONFIG & PERSISTENT CSV SETUP
 # ==========================================
 st.set_page_config(
     page_title="10-Paper Research Lab Terminal", 
@@ -32,8 +33,31 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
+CSV_FILE = "signal_history.csv"
+
+def load_persistent_history():
+    if os.path.exists(CSV_FILE):
+        try:
+            df_hist = pd.read_csv(CSV_FILE)
+            return df_hist.to_dict('records')
+        except Exception:
+            return []
+    return []
+
+def save_persistent_history(history_list):
+    try:
+        df_hist = pd.DataFrame(history_list)
+        # Drop temporary internal keys like 'bucket' if present before saving to CSV
+        if 'bucket' in df_hist.columns:
+            df_hist_save = df_hist.drop(columns=['bucket'])
+        else:
+            df_hist_save = df_hist
+        df_hist_save.to_csv(CSV_FILE, index=False)
+    except Exception as e:
+        st.error(f"Error saving history: {e}")
+
 if "trade_history_log" not in st.session_state:
-    st.session_state.trade_history_log = []
+    st.session_state.trade_history_log = load_persistent_history()
 
 # ==========================================
 # RESPONSIVE STYLING
@@ -156,8 +180,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     signal = compute_signal(df, bids, asks, st.session_state.trade_history_log)
 
-    if len(st.session_state.trade_history_log) == 0 or st.session_state.trade_history_log[-1]["bucket"] != global_bucket:
-        st.session_state.trade_history_log.insert(0, {
+    if len(st.session_state.trade_history_log) == 0 or st.session_state.trade_history_log[-1].get("bucket") != global_bucket:
+        new_entry = {
             "bucket": global_bucket,
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "symbol": selected_symbol,
@@ -165,7 +189,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             "direction": signal["direction"],
             "score": round(signal["score"], 3),
             "price": round(signal["close_price"], 2)
-        })
+        }
+        st.session_state.trade_history_log.insert(0, new_entry)
+        save_persistent_history(st.session_state.trade_history_log)
 
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
@@ -194,7 +220,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -272,7 +298,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     st.markdown("---")
     st.subheader("⚡ Saved Signal History Log")
     if st.session_state.trade_history_log:
-        history_df = pd.DataFrame(st.session_state.trade_history_log)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price']]
+        history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
+        history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price']]
         st.dataframe(history_df, use_container_width=True, hide_index=True, height=200)
     else:
         st.info("No signal history logged yet.")
