@@ -414,15 +414,16 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             selected_idx = st.selectbox(
                 "Select Signal to Update", 
                 range(len(recent_signals)), 
-                format_func=lambda i: f"[{recent_signals[i]['symbol']}] {recent_signals[i]['timestamp']} ({recent_signals[i]['direction']}) - {recent_signals[i]['outcome']}"
+                format_func=lambda i: f"[{recent_signals[i]['symbol']}] {recent_signals[i]['timestamp']} ({recent_signals[i]['direction']}) - {recent_signals[i]['outcome']}",
+                key="update_signal_selectbox"
             )
             
-            new_outcome = st.radio("Mark Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True)
+            new_outcome = st.radio("Mark Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True, key="update_outcome_radio")
             
-            if st.button("Save Outcome Update", use_container_width=True):
+            if st.button("Save Outcome Update", use_container_width=True, key="save_outcome_btn"):
                 st.session_state.trade_history_log[selected_idx]['outcome'] = new_outcome
                 save_persistent_history(st.session_state.trade_history_log)
-                st.success("Outcome updated successfully!")
+                st.success(f"Outcome successfully updated to {new_outcome}!")
                 st.rerun()
         else:
             st.write("No signals available to update.")
