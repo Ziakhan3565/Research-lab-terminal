@@ -219,7 +219,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -293,6 +293,38 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with b3:
         st.subheader("⚡ Key Metrics & Orderbook")
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
+
+    # ==========================================
+    # DAILY PERFORMANCE & ANALYTICS SECTION
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📊 Daily Performance & Analytics Summary")
+
+    if st.session_state.trade_history_log:
+        df_log = pd.DataFrame(st.session_state.trade_history_log)
+        df_log['date'] = pd.to_datetime(df_log['timestamp']).dt.date
+        today_date = datetime.datetime.now().date()
+        
+        # Filter for today's logs
+        df_today = df_log[df_log['date'] == today_date]
+        
+        d_col1, d_col2, d_col3, d_col4 = st.columns(4)
+        
+        total_today = len(df_today)
+        long_count = len(df_today[df_today['direction'] == 'LONG']) if total_today > 0 else 0
+        short_count = len(df_today[df_today['direction'] == 'SHORT']) if total_today > 0 else 0
+        neutral_count = len(df_today[df_today['direction'] == 'NEUTRAL']) if total_today > 0 else 0
+        avg_score_today = df_today['score'].mean() if total_today > 0 else 0.0
+
+        with d_col1:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">📅 Today Total Signals</div><div class="metric-value-blue">{total_today}</div></div>', unsafe_allow_html=True)
+        with d_col2:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">📈 LONG / 📉 SHORT</div><div style="font-size:18px; font-weight:700; color:#00e676; margin-top:4px;">{long_count} / <span style="color:#ff5252;">{short_count}</span></div></div>', unsafe_allow_html=True)
+        with d_col3:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">⚖️ Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neutral_count}</div></div>', unsafe_allow_html=True)
+        with d_col4:
+            score_color = "#00e676" if avg_score_today >= 0 else "#ff5252"
+            st.markdown(f'<div class="metric-card"><div class="metric-label">⚡ Today Avg Score</div><div style="font-size:18px; font-weight:700; color:{score_color}; margin-top:4px;">{avg_score_today:+.3f}</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("⚡ Saved Signal History Log")
