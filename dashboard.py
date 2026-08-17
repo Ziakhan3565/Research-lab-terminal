@@ -219,7 +219,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -295,35 +295,83 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # DAILY PERFORMANCE & ANALYTICS SECTION
+    # PERFORMANCE & ANALYTICS SECTION (DAILY, WEEKLY, MONTHLY)
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Daily Performance & Analytics Summary")
+    st.subheader("📊 Performance & Analytics Summary (Daily, Weekly, Monthly)")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
-        df_log['date'] = pd.to_datetime(df_log['timestamp']).dt.date
-        today_date = datetime.datetime.now().date()
+        df_log['dt'] = pd.to_datetime(df_log['timestamp'])
+        df_log['date'] = df_log['dt'].dt.date
         
-        df_today = df_log[df_log['date'] == today_date]
-        
-        d_col1, d_col2, d_col3, d_col4 = st.columns(4)
-        
-        total_today = len(df_today)
-        long_count = len(df_today[df_today['direction'] == 'LONG']) if total_today > 0 else 0
-        short_count = len(df_today[df_today['direction'] == 'SHORT']) if total_today > 0 else 0
-        neutral_count = len(df_today[df_today['direction'] == 'NEUTRAL']) if total_today > 0 else 0
-        avg_score_today = df_today['score'].mean() if total_today > 0 else 0.0
+        now_dt = datetime.datetime.now()
+        today_date = now_dt.date()
+        current_year = now_dt.year
+        current_week = now_dt.isocalendar()[1]
+        current_month = now_dt.month
 
-        with d_col1:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">📅 Today Total Signals</div><div class="metric-value-blue">{total_today}</div></div>', unsafe_allow_html=True)
-        with d_col2:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">📈 LONG / 📉 SHORT</div><div style="font-size:18px; font-weight:700; color:#00e676; margin-top:4px;">{long_count} / <span style="color:#ff5252;">{short_count}</span></div></div>', unsafe_allow_html=True)
-        with d_col3:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">⚖️ Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neutral_count}</div></div>', unsafe_allow_html=True)
-        with d_col4:
-            score_color = "#00e676" if avg_score_today >= 0 else "#ff5252"
-            st.markdown(f'<div class="metric-card"><div class="metric-label">⚡ Today Avg Score</div><div style="font-size:18px; font-weight:700; color:{score_color}; margin-top:4px;">{avg_score_today:+.3f}</div></div>', unsafe_allow_html=True)
+        # 1. Daily Stats
+        df_today = df_log[df_log['date'] == today_date]
+        tot_d = len(df_today)
+        long_d = len(df_today[df_today['direction'] == 'LONG']) if tot_d > 0 else 0
+        short_d = len(df_today[df_today['direction'] == 'SHORT']) if tot_d > 0 else 0
+        avg_s_d = df_today['score'].mean() if tot_d > 0 else 0.0
+
+        # 2. Weekly Stats (Current ISO Week)
+        df_week = df_log[(df_log['dt'].dt.isocalendar().week == current_week) & (df_log['dt'].dt.year == current_year)]
+        tot_w = len(df_week)
+        long_w = len(df_week[df_week['direction'] == 'LONG']) if tot_w > 0 else 0
+        short_w = len(df_week[df_week['direction'] == 'SHORT']) if tot_w > 0 else 0
+        avg_s_w = df_week['score'].mean() if tot_w > 0 else 0.0
+
+        # 3. Monthly Stats (Current Month & Year)
+        df_month = df_log[(df_log['dt'].dt.month == current_month) & (df_log['dt'].dt.year == current_year)]
+        tot_m = len(df_month)
+        long_m = len(df_month[df_month['direction'] == 'LONG']) if tot_m > 0 else 0
+        short_m = len(df_month[df_month['direction'] == 'SHORT']) if tot_m > 0 else 0
+        avg_s_m = df_month['score'].mean() if tot_m > 0 else 0.0
+
+        tab_d, tab_w, tab_m = st.tabs(["📅 Daily Overview", "week Weekly Overview", "🗓️ Monthly Overview"])
+
+        with tab_d:
+            w1, w2, w3, w4 = st.columns(4)
+            with w1:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Total Signals (Today)</div><div class="metric-value-blue">{tot_d}</div></div>', unsafe_allow_html=True)
+            with w2:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">LONG / SHORT</div><div style="font-size:18px; font-weight:700; color:#00e676; margin-top:4px;">{long_d} / <span style="color:#ff5252;">{short_d}</span></div></div>', unsafe_allow_html=True)
+            with w3:
+                sc_col = "#00e676" if avg_s_d >= 0 else "#ff5252"
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Avg Score (Today)</div><div style="font-size:18px; font-weight:700; color:{sc_col}; margin-top:4px;">{avg_s_d:+.3f}</div></div>', unsafe_allow_html=True)
+            with w4:
+                neu_d = tot_d - (long_d + short_d)
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_d}</div></div>', unsafe_allow_html=True)
+
+        with tab_w:
+            ww1, ww2, ww3, ww4 = st.columns(4)
+            with ww1:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Total Signals (This Week)</div><div class="metric-value-blue">{tot_w}</div></div>', unsafe_allow_html=True)
+            with ww2:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">LONG / SHORT</div><div style="font-size:18px; font-weight:700; color:#00e676; margin-top:4px;">{long_w} / <span style="color:#ff5252;">{short_w}</span></div></div>', unsafe_allow_html=True)
+            with ww3:
+                sc_col_w = "#00e676" if avg_s_w >= 0 else "#ff5252"
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Avg Score (This Week)</div><div style="font-size:18px; font-weight:700; color:{sc_col_w}; margin-top:4px;">{avg_s_w:+.3f}</div></div>', unsafe_allow_html=True)
+            with ww4:
+                neu_w = tot_w - (long_w + short_w)
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_w}</div></div>', unsafe_allow_html=True)
+
+        with tab_m:
+            mm1, mm2, mm3, mm4 = st.columns(4)
+            with mm1:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Total Signals (This Month)</div><div class="metric-value-blue">{tot_m}</div></div>', unsafe_allow_html=True)
+            with mm2:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">LONG / SHORT</div><div style="font-size:18px; font-weight:700; color:#00e676; margin-top:4px;">{long_m} / <span style="color:#ff5252;">{short_m}</span></div></div>', unsafe_allow_html=True)
+            with mm3:
+                sc_col_m = "#00e676" if avg_s_m >= 0 else "#ff5252"
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Avg Score (This Month)</div><div style="font-size:18px; font-weight:700; color:{sc_col_m}; margin-top:4px;">{avg_s_m:+.3f}</div></div>', unsafe_allow_html=True)
+            with mm4:
+                neu_m = tot_m - (long_m + short_m)
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_m}</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
     st.subheader("⚡ Saved Signal History Log")
