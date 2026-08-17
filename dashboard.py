@@ -139,6 +139,7 @@ def fetch_order_book_depth(symbol, depth_limit=10):
         return np.array([]), np.array([])
 
 # ==========================================
+# ==========================================
 # BACKGROUND MULTI-COIN SCANNER & AUTO R:R (FIXED WITH HIGH/LOW WICKS)
 # ==========================================
 def compute_signal_light(df_in, bids_in, asks_in, history):
@@ -166,34 +167,35 @@ def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
         sl_price = entry_price - sl_distance
         
         for _, row in df_candles.iterrows():
-            if row['High'] >= tp_price:
-                return "WIN"
             if row['Low'] <= sl_price:
                 return "LOSS"
+            if row['High'] >= tp_price:
+                return "WIN"
                 
     elif direction == "SHORT":
         tp_price = entry_price - tp_distance
         sl_price = entry_price + sl_distance
         
         for _, row in df_candles.iterrows():
-            if row['Low'] <= tp_price:
-                return "WIN"
             if row['High'] >= sl_price:
                 return "LOSS"
+            if row['Low'] <= tp_price:
+                return "WIN"
                 
     return "PENDING"
 
-# Run Auto Outcome checker for all existing pending trades using candle High/Low
+# Run Auto Outcome checker for all existing pending trades using robust candle matching
 history_updated = False
 for item in st.session_state.trade_history_log:
     if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
-        curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=15)
+        # Fetch a deeper history window (e.g., 50 candles) to ensure future price action is captured
+        curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=50)
         if not curr_df.empty:
             signal_time = pd.to_datetime(item['timestamp'])
             future_candles = curr_df[curr_df['Time'] >= signal_time]
             
             if future_candles.empty:
-                future_candles = curr_df 
+                future_candles = curr_df  
                 
             atr_val = (curr_df['High'] - curr_df['Low']).mean()
             sl_dist = atr_val if not np.isnan(atr_val) and atr_val > 0 else (item['price'] * 0.01)
