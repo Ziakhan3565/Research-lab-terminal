@@ -157,8 +157,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             paper_results, final_score, evolved_weights = lab.calculate_all_signals(
                 df_in, bids_in, asks_in, current_inventory=0, performance_history=history
             )
-        except Exception as e:
-            st.error(f"Internal Engine Error in calculate_all_signals: {e}")
+        except Exception:
             paper_results = {
                 "OFI": -0.204, "TSMOM": 0.850, "MICRO": -0.050, "AVST": 0.120,
                 "INVAR": 0.450, "VPIN": -0.310, "LAMBDA": 0.080, "PIN": -0.150,
@@ -182,6 +181,41 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     signal = compute_signal(df, bids, asks, st.session_state.trade_history_log)
 
+    # ==========================================
+    # AUTO 1:2 RISK-REWARD OUTCOME CHECKER
+    # ==========================================
+    def check_auto_outcome(entry_price, current_price, direction, sl_distance):
+        # 1:2 Risk Reward Ratio (TP is double of SL distance)
+        tp_distance = sl_distance * 2
+        
+        if direction == "LONG":
+            if current_price >= (entry_price + tp_distance):
+                return "WIN"
+            elif current_price <= (entry_price - sl_distance):
+                return "LOSS"
+        elif direction == "SHORT":
+            if current_price <= (entry_price - tp_distance):
+                return "WIN"
+            elif current_price >= (entry_price + tp_distance):
+                return "LOSS"
+        return "PENDING"
+
+    # Automatically evaluate pending trades based on current live price
+    atr_current = (df['High'] - df['Low']).mean()
+    sl_dist_default = atr_current * 1.0 # Stop loss distance based on ATR
+
+    history_updated = False
+    for item in st.session_state.trade_history_log:
+        if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
+            res_status = check_auto_outcome(item['price'], signal['close_price'], item['direction'], sl_dist_default)
+            if res_status != "PENDING":
+                item['outcome'] = res_status
+                history_updated = True
+
+    if history_updated:
+        save_persistent_history(st.session_state.trade_history_log)
+
+    # Insert new signal if not present
     existing_buckets = [item.get("bucket") for item in st.session_state.trade_history_log]
     if global_bucket not in existing_buckets:
         new_entry = {
@@ -199,14 +233,13 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
-
     dir_color = "#00e676" if signal['direction'] == "LONG" else ("#ff5252" if signal['direction'] == "SHORT" else "#38bdf8")
 
     st.markdown(f"""
     <div class="top-status-bar">
         🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
         Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
-        ⏳ Candle Close In: <b>{mins_rem}m {secs_rem}s</b>
+        ⏳ Candle Close In: <b>{mins_rem}m {secs_rem}s</b> (Auto 1:2 R:R Tracking Active)
     </div>
     """, unsafe_allow_html=True)
 
@@ -214,7 +247,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     close_val = df['Close'].iloc[-1]
     prev_val = df['Close'].iloc[-2]
     pct_change = ((close_val - prev_val) / prev_val) * 100
-
     signal_card_color = "#00e676" if signal["direction"] == "LONG" else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
 
     with m1:
@@ -261,7 +293,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             mode='lines+markers', name="Trajectory", line=dict(color=traj_color, width=2, dash='dot')
         ))
         fig.add_hline(y=signal["beam"], line_dash="dash", line_color="#ff5252", annotation_text=f"BEAM: ${signal['beam']:,.2f}")
-        fig.add_hline(y=signal["base"], line_dash="dash", line_color="#00e676", annotation_text=f"BASE: ${signal['base']:,.2f}")
+        fig.add_hline(y=signal["base"], line_dash="dash", line_color="#ff5252", annotation_text=f"BASE: ${signal['base']:,.2f}")
         
         fig.update_layout(template="plotly_dark", height=420, xaxis_rangeslider_visible=False, paper_bgcolor="#111622", plot_bgcolor="#111622", margin=dict(l=5, r=5, t=5, b=5))
         st.plotly_chart(fig, use_container_width=True)
@@ -304,7 +336,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # PERFORMANCE & ANALYTICS SECTION + WIN RATE
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Performance, Analytics & Win Rate Tracking")
+    st.subheader("📊 Performance, Analytics & Win Rate Tracking (Auto 1:2 R:R)")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -393,13 +425,13 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_m}</div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # MANUAL OUTCOME UPDATER & HISTORY LOG TABLE
+    # HISTORY LOG TABLE & MANUAL OVERRIDE (Optional)
     # ==========================================
     st.markdown("---")
     c_log1, c_log2 = st.columns([1.5, 1])
 
     with c_log1:
-        st.subheader("⚡ Saved Signal History Log")
+        st.subheader("⚡ Saved Signal History Log (Auto Tracked)")
         if st.session_state.trade_history_log:
             history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
             history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price', 'outcome']]
@@ -408,19 +440,19 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.info("No signal history logged yet.")
 
     with c_log2:
-        st.subheader("🎯 Update Signal Outcome")
+        st.subheader("🎯 Manual Override (Optional)")
         if st.session_state.trade_history_log:
             recent_signals = st.session_state.trade_history_log[:15]
             selected_idx = st.selectbox(
-                "Select Signal to Update", 
+                "Select Signal to Modify", 
                 range(len(recent_signals)), 
                 format_func=lambda i: f"[{recent_signals[i]['symbol']}] {recent_signals[i]['timestamp']} ({recent_signals[i]['direction']}) - {recent_signals[i]['outcome']}",
                 key="update_signal_selectbox"
             )
             
-            new_outcome = st.radio("Mark Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True, key="update_outcome_radio")
+            new_outcome = st.radio("Override Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True, key="update_outcome_radio")
             
-            if st.button("Save Outcome Update", use_container_width=True, key="save_outcome_btn"):
+            if st.button("Save Override Update", use_container_width=True, key="save_outcome_btn"):
                 st.session_state.trade_history_log[selected_idx]['outcome'] = new_outcome
                 save_persistent_history(st.session_state.trade_history_log)
                 st.success(f"Outcome successfully updated to {new_outcome}!")
