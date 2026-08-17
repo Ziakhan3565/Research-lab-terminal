@@ -39,7 +39,6 @@ def load_persistent_history():
     if os.path.exists(CSV_FILE):
         try:
             df_hist = pd.read_csv(CSV_FILE)
-            # Ensure 'outcome' column exists if loading old CSVs
             if 'outcome' not in df_hist.columns:
                 df_hist['outcome'] = 'PENDING'
             return df_hist.to_dict('records')
@@ -225,7 +224,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
+        beam_val_str = f"${signal['beam']:,.2f}"
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -301,7 +301,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # PERFORMANCE & ANALYTICS SECTION (DAILY, WEEKLY, MONTHLY) + WIN RATE
+    # PERFORMANCE & ANALYTICS SECTION + WIN RATE
     # ==========================================
     st.markdown("---")
     st.subheader("📊 Performance, Analytics & Win Rate Tracking")
@@ -317,13 +317,11 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         current_week = now_dt.isocalendar()[1]
         current_month = now_dt.month
 
-        # Overall Win Rate Stats
         total_wins = len(df_log[df_log['outcome'] == 'WIN'])
         total_losses = len(df_log[df_log['outcome'] == 'LOSS'])
         closed_trades = total_wins + total_losses
         overall_win_rate = (total_wins / closed_trades * 100) if closed_trades > 0 else 0.0
 
-        # Quick Win Rate Metric Row
         wr1, wr2, wr3, wr4 = st.columns(4)
         with wr1:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Overall Win Rate</div><div class="metric-value-green">{overall_win_rate:.1f}%</div></div>', unsafe_allow_html=True)
@@ -335,21 +333,18 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             pending_count = len(df_log[df_log['outcome'] == 'PENDING'])
             st.markdown(f'<div class="metric-card"><div class="metric-label">Pending Outcomes</div><div class="metric-value-blue">{pending_count}</div></div>', unsafe_allow_html=True)
 
-        # 1. Daily Stats
         df_today = df_log[df_log['date'] == today_date]
         tot_d = len(df_today)
         long_d = len(df_today[df_today['direction'] == 'LONG']) if tot_d > 0 else 0
         short_d = len(df_today[df_today['direction'] == 'SHORT']) if tot_d > 0 else 0
         avg_s_d = df_today['score'].mean() if tot_d > 0 else 0.0
 
-        # 2. Weekly Stats (Current ISO Week)
         df_week = df_log[(df_log['dt'].dt.isocalendar().week == current_week) & (df_log['dt'].dt.year == current_year)]
         tot_w = len(df_week)
         long_w = len(df_week[df_week['direction'] == 'LONG']) if tot_w > 0 else 0
         short_w = len(df_week[df_week['direction'] == 'SHORT']) if tot_w > 0 else 0
         avg_s_w = df_week['score'].mean() if tot_w > 0 else 0.0
 
-        # 3. Monthly Stats (Current Month & Year)
         df_month = df_log[(df_log['dt'].dt.month == current_month) & (df_log['dt'].dt.year == current_year)]
         tot_m = len(df_month)
         long_m = len(df_month[df_month['direction'] == 'LONG']) if tot_m > 0 else 0
@@ -415,7 +410,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with c_log2:
         st.subheader("🎯 Update Signal Outcome")
         if st.session_state.trade_history_log:
-            recent_signals = st.session_state.trade_history_log[:15] # Top 15 recent signals
+            recent_signals = st.session_state.trade_history_log[:15]
             selected_idx = st.selectbox(
                 "Select Signal to Update", 
                 range(len(recent_signals)), 
