@@ -146,7 +146,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     lock_seconds = tf_minutes * 60
     current_time_sec = int(time.time())
     time_bucket = current_time_sec - (current_time_sec % lock_seconds)
-    # Unique bucket per coin + timeframe + time window
     global_bucket = f"{selected_symbol}_{selected_tf_label}_{time_bucket}"
     time_remaining = lock_seconds - (current_time_sec % lock_seconds)
 
@@ -181,7 +180,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     signal = compute_signal(df, bids, asks, st.session_state.trade_history_log)
 
-    # Check if entry for this specific coin & bucket already exists in log
     existing_buckets = [item.get("bucket") for item in st.session_state.trade_history_log]
     if global_bucket not in existing_buckets:
         new_entry = {
@@ -223,7 +221,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
