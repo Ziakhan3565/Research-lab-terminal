@@ -172,7 +172,6 @@ def check_auto_outcome(entry_price, current_price, direction, sl_distance):
 history_updated = False
 for item in st.session_state.trade_history_log:
     if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
-        # Quick fetch current price for the coin in history
         curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=5)
         if not curr_df.empty:
             curr_price = curr_df['Close'].iloc[-1]
@@ -359,10 +358,10 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # PERFORMANCE & ANALYTICS SECTION + WIN RATE
+    # PERFORMANCE & ANALYTICS SECTION + COIN PROFIT/LOSS BREAKDOWN
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Performance, Analytics & Win Rate Tracking (All-Coin Auto Scan)")
+    st.subheader("📊 Performance, Analytics & Coin-wise Profit/Loss Breakdown")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -390,6 +389,35 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         with wr4:
             pending_count = len(df_log[df_log['outcome'] == 'PENDING'])
             st.markdown(f'<div class="metric-card"><div class="metric-label">Pending Outcomes</div><div class="metric-value-blue">{pending_count}</div></div>', unsafe_allow_html=True)
+
+        # ==========================================
+        # COIN-WISE PERFORMANCE & PROFIT/LOSS BREAKDOWN
+        # ==========================================
+        st.markdown("### 🏆 Coin-wise Win/Loss & Profit Ranking")
+        coin_perf_list = []
+        for coin in COINS_LIST:
+            coin_df = df_log[df_log['symbol'] == coin]
+            c_wins = len(coin_df[coin_df['outcome'] == 'WIN'])
+            c_losses = len(coin_df[coin_df['outcome'] == 'LOSS'])
+            c_closed = c_wins + c_losses
+            c_wr = (c_wins / c_closed * 100) if c_closed > 0 else 0.0
+            # Assuming 1:2 R:R with $2 risk per trade ($4 win, $2 loss)
+            c_net_pnl = (c_wins * 4) - (c_losses * 2)
+            
+            coin_perf_list.append({
+                "Symbol": coin,
+                "Wins": c_wins,
+                "Losses": c_losses,
+                "Win Rate": f"{c_wr:.1f}%",
+                "Est. PnL ($)": f"${c_net_pnl:+d}"
+            })
+        
+        df_coin_perf = pd.DataFrame(coin_perf_list)
+        # Sort by estimated profit descending
+        df_coin_perf['sort_val'] = df_coin_perf['Est. PnL ($)'].str.replace('$', '').str.replace('+', '').astype(int)
+        df_coin_perf = df_coin_perf.sort_values(by='sort_val', ascending=False).drop(columns=['sort_val'])
+        
+        st.dataframe(df_coin_perf, use_container_width=True, hide_index=True, height=220)
 
         df_today = df_log[df_log['date'] == today_date]
         tot_d = len(df_today)
