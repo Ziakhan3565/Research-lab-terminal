@@ -39,6 +39,9 @@ def load_persistent_history():
     if os.path.exists(CSV_FILE):
         try:
             df_hist = pd.read_csv(CSV_FILE)
+            # Ensure 'outcome' column exists if loading old CSVs
+            if 'outcome' not in df_hist.columns:
+                df_hist['outcome'] = 'PENDING'
             return df_hist.to_dict('records')
         except Exception:
             return []
@@ -189,7 +192,8 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             "timeframe": selected_tf_label,
             "direction": signal["direction"],
             "score": round(signal["score"], 3),
-            "price": round(signal["close_price"], 2)
+            "price": round(signal["close_price"], 2),
+            "outcome": "PENDING"
         }
         st.session_state.trade_history_log.insert(0, new_entry)
         save_persistent_history(st.session_state.trade_history_log)
@@ -221,7 +225,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{signal_card_color}; margin-top:4px;">{signal["direction"]}</div></div>', unsafe_allow_html=True)
     with m4:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam"]:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">${signal["beam']:,.2f}</div></div>', unsafe_allow_html=True)
     with m5:
         fig_gauge = go.Figure(go.Pie(values=[42, 58], hole=0.7, marker_colors=['#f59e0b', '#1e2638'], textinfo='none', showlegend=False))
         fig_gauge.update_layout(annotations=[dict(text='<b>42%</b>', x=0.5, y=0.5, font_size=14, font_color='#ffffff', showarrow=False)], margin=dict(l=0, r=0, t=0, b=0), height=70, paper_bgcolor='rgba(0,0,0,0)')
@@ -297,10 +301,10 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown('<div class="metric-card" style="height:240px;"><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OBI (Weighted)</span> <b style="color:#ff5252;">-0.154</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>OFI</span> <b style="color:#ff5252;">-8,245</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Volume Ratio</span> <b>0.92</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Market Pressure</span> <b style="color:#ff5252;">-0.218</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Flow Strength</span> <b style="color:#ff5252;">-0.165</b></div><div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Liquidity Score</span> <b style="color:#f59e0b;">58 / 100</b></div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # PERFORMANCE & ANALYTICS SECTION (DAILY, WEEKLY, MONTHLY)
+    # PERFORMANCE & ANALYTICS SECTION (DAILY, WEEKLY, MONTHLY) + WIN RATE
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Performance & Analytics Summary (Daily, Weekly, Monthly)")
+    st.subheader("📊 Performance, Analytics & Win Rate Tracking")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -312,6 +316,24 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         current_year = now_dt.year
         current_week = now_dt.isocalendar()[1]
         current_month = now_dt.month
+
+        # Overall Win Rate Stats
+        total_wins = len(df_log[df_log['outcome'] == 'WIN'])
+        total_losses = len(df_log[df_log['outcome'] == 'LOSS'])
+        closed_trades = total_wins + total_losses
+        overall_win_rate = (total_wins / closed_trades * 100) if closed_trades > 0 else 0.0
+
+        # Quick Win Rate Metric Row
+        wr1, wr2, wr3, wr4 = st.columns(4)
+        with wr1:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Overall Win Rate</div><div class="metric-value-green">{overall_win_rate:.1f}%</div></div>', unsafe_allow_html=True)
+        with wr2:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Total Wins (W)</div><div style="font-size:20px; font-weight:700; color:#00e676; margin-top:4px;">{total_wins}</div></div>', unsafe_allow_html=True)
+        with wr3:
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Total Losses (L)</div><div style="font-size:20px; font-weight:700; color:#ff5252; margin-top:4px;">{total_losses}</div></div>', unsafe_allow_html=True)
+        with wr4:
+            pending_count = len(df_log[df_log['outcome'] == 'PENDING'])
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Pending Outcomes</div><div class="metric-value-blue">{pending_count}</div></div>', unsafe_allow_html=True)
 
         # 1. Daily Stats
         df_today = df_log[df_log['date'] == today_date]
@@ -375,14 +397,40 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 neu_m = tot_m - (long_m + short_m)
                 st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_m}</div></div>', unsafe_allow_html=True)
 
+    # ==========================================
+    # MANUAL OUTCOME UPDATER & HISTORY LOG TABLE
+    # ==========================================
     st.markdown("---")
-    st.subheader("⚡ Saved Signal History Log")
-    if st.session_state.trade_history_log:
-        history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
-        history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price']]
-        st.dataframe(history_df, use_container_width=True, hide_index=True, height=200)
-    else:
-        st.info("No signal history logged yet.")
+    c_log1, c_log2 = st.columns([1.5, 1])
+
+    with c_log1:
+        st.subheader("⚡ Saved Signal History Log")
+        if st.session_state.trade_history_log:
+            history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
+            history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price', 'outcome']]
+            st.dataframe(history_df, use_container_width=True, hide_index=True, height=220)
+        else:
+            st.info("No signal history logged yet.")
+
+    with c_log2:
+        st.subheader("🎯 Update Signal Outcome")
+        if st.session_state.trade_history_log:
+            recent_signals = st.session_state.trade_history_log[:15] # Top 15 recent signals
+            selected_idx = st.selectbox(
+                "Select Signal to Update", 
+                range(len(recent_signals)), 
+                format_func=lambda i: f"[{recent_signals[i]['symbol']}] {recent_signals[i]['timestamp']} ({recent_signals[i]['direction']}) - {recent_signals[i]['outcome']}"
+            )
+            
+            new_outcome = st.radio("Mark Outcome as:", ["WIN", "LOSS", "PENDING"], horizontal=True)
+            
+            if st.button("Save Outcome Update", use_container_width=True):
+                st.session_state.trade_history_log[selected_idx]['outcome'] = new_outcome
+                save_persistent_history(st.session_state.trade_history_log)
+                st.success("Outcome updated successfully!")
+                st.rerun()
+        else:
+            st.write("No signals available to update.")
 
 time.sleep(10)
 st.rerun()
