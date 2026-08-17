@@ -503,132 +503,133 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-# TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
-# ==========================================
-st.markdown("---")
-st.subheader("🚀 Live / Paper Trade Execution Panel")
+  # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
+  # ==========================================
+  st.markdown("---")
+  st.subheader("🚀 Live / Paper Trade Execution Panel")
 
-# Automated Signal Trade Settings Toggle
-auto_trade_mode = st.checkbox(
-    "🤖 Enable Fully Automatic Trading on Signal", value=False
-)
-
-t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
-
-with t_col1:
-  trade_action = st.selectbox(
-      "Action",
-      (
-          ["BUY / LONG", "SELL / SHORT"]
-          if "signal" not in locals() or signal.get("direction") != "SHORT"
-          else ["SELL / SHORT", "BUY / LONG"]
-      ),
-  )
-with t_col2:
-  order_size_usdt = st.number_input(
-      "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
-  )
-with t_col3:
-  leverage_val = st.slider("Leverage (x)", 1, 50, 10)
-with t_col4:
-  sl_pct = st.number_input(
-      "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
-  )
-  tp_pct = st.number_input(
-      "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
-  )
-with t_col5:
-  st.markdown("<br>", unsafe_allow_html=True)
-  execute_btn = st.button(
-      "⚡ Execute Trade Order", use_container_width=True, type="primary"
+  # Automated Signal Trade Settings Toggle
+  auto_trade_mode = st.checkbox(
+      "🤖 Enable Fully Automatic Trading on Signal", value=False
   )
 
-# ==========================================
-# EXECUTION BUTTON LOGIC
-# ==========================================
-if execute_btn:
-  # 1. Determine Direction & Calculations
-  if auto_trade_mode:
-    direction_tag = (
-        signal["direction"]
-        if "signal" in locals() and signal.get("direction")
-        else "LONG"
+  t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
+
+  with t_col1:
+    trade_action = st.selectbox(
+        "Action",
+        (
+            ["BUY / LONG", "SELL / SHORT"]
+            if "signal" not in locals() or signal.get("direction") != "SHORT"
+            else ["SELL / SHORT", "BUY / LONG"]
+        ),
     )
-    if direction_tag == "NEUTRAL":
-      direction_tag = "LONG"
-  else:
-    direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+  with t_col2:
+    order_size_usdt = st.number_input(
+        "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
+    )
+  with t_col3:
+    leverage_val = st.slider("Leverage (x)", 1, 50, 10)
+  with t_col4:
+    sl_pct = st.number_input(
+        "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
+    )
+    tp_pct = st.number_input(
+        "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
+    )
+  with t_col5:
+    st.markdown("<br>", unsafe_allow_html=True)
+    execute_btn = st.button(
+        "⚡ Execute Trade Order", use_container_width=True, type="primary"
+    )
 
-  # Fallback agar close_val defined na ho
-  entry_p = close_val if "close_val" in locals() else 0.0
-  if entry_p <= 0:
-    entry_p = 1.0  # Safe fallback
-
-  qty = (order_size_usdt * leverage_val) / entry_p
-
-  # SL and TP Price Calculations
-  if direction_tag == "LONG":
-    stop_loss_price = entry_p * (1 - sl_pct / 100)
-    take_profit_price = entry_p * (1 + tp_pct / 100)
-  else:
-    stop_loss_price = entry_p * (1 + sl_pct / 100)
-    take_profit_price = entry_p * (1 - tp_pct / 100)
-
-  exchange_executed = False
-  execution_msg = ""
-
-  # 2. Live Exchange Execution Check
-  if (
-      "trading_mode" in locals()
-      and trading_mode == "Live/Real"
-      and "api_key" in locals()
-      and api_key
-      and "api_secret" in locals()
-      and api_secret
-  ):
-    try:
-      EXCHANGE_CLASS = getattr(ccxt, exchange_name)
-      ex_inst = EXCHANGE_CLASS({
-          "apiKey": api_key,
-          "secret": api_secret,
-          "enableRateLimit": True,
-      })
-      ex_inst.load_markets()
-      try:
-        ex_inst.set_leverage(leverage_val, selected_symbol)
-      except Exception:
-        pass
-
-      side_str = "buy" if direction_tag == "LONG" else "sell"
-
-      # Placing main market order
-      order_res = ex_inst.create_market_order(selected_symbol, side_str, qty)
-
-      # Parameters for SL and TP
-      params = {
-          "stopLossPrice": round(stop_loss_price, 2),
-          "takeProfitPrice": round(take_profit_price, 2),
-      }
-
-      execution_msg = (
-          f"Live Order Successful! ID: {order_res.get('id', 'N/A')} | SL:"
-          f" ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
+  # ==========================================
+  # EXECUTION BUTTON LOGIC
+  # ==========================================
+  if execute_btn:
+    # 1. Determine Direction & Calculations
+    if auto_trade_mode:
+      direction_tag = (
+          signal["direction"]
+          if "signal" in locals() and signal.get("direction")
+          else "LONG"
       )
-      exchange_executed = True
-    except Exception as e:
-      execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
-  else:
-    # Paper Mode Simulation Message
-    execution_msg = (
-        f"Paper Trade Simulated! Dir: {direction_tag} | Entry: ${entry_p:,.2f}"
-        f" | SL: ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
-    )
+      if direction_tag == "NEUTRAL":
+        direction_tag = "LONG"
+    else:
+      direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
 
-  # Display Status on Streamlit Dashboard
-  if exchange_executed:
-    st.success(execution_msg)
-  else:
-    st.info(execution_msg)
+    # Fallback agar close_val defined na ho
+    entry_p = close_val if "close_val" in locals() else 0.0
+    if entry_p <= 0:
+      entry_p = 1.0  # Safe fallback
+
+    qty = (order_size_usdt * leverage_val) / entry_p
+
+    # SL and TP Price Calculations
+    if direction_tag == "LONG":
+      stop_loss_price = entry_p * (1 - sl_pct / 100)
+      take_profit_price = entry_p * (1 + tp_pct / 100)
+    else:
+      stop_loss_price = entry_p * (1 + sl_pct / 100)
+      take_profit_price = entry_p * (1 - tp_pct / 100)
+
+    exchange_executed = False
+    execution_msg = ""
+
+    # 2. Live Exchange Execution Check
+    if (
+        "trading_mode" in locals()
+        and trading_mode == "Live/Real"
+        and "api_key" in locals()
+        and api_key
+        and "api_secret" in locals()
+        and api_secret
+    ):
+      try:
+        EXCHANGE_CLASS = getattr(ccxt, exchange_name)
+        ex_inst = EXCHANGE_CLASS({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+        })
+        ex_inst.load_markets()
+        try:
+          ex_inst.set_leverage(leverage_val, selected_symbol)
+        except Exception:
+          pass
+
+        side_str = "buy" if direction_tag == "LONG" else "sell"
+
+        # Placing main market order
+        order_res = ex_inst.create_market_order(selected_symbol, side_str, qty)
+
+        # Parameters for SL and TP
+        params = {
+            "stopLossPrice": round(stop_loss_price, 2),
+            "takeProfitPrice": round(take_profit_price, 2),
+        }
+
+        execution_msg = (
+            f"Live Order Successful! ID: {order_res.get('id', 'N/A')} | SL:"
+            f" ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
+        )
+        exchange_executed = True
+      except Exception as e:
+        execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
+    else:
+      # Paper Mode Simulation Message
+      execution_msg = (
+          f"Paper Trade Simulated! Dir: {direction_tag} | Entry:"
+          f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
+          f" ${take_profit_price:,.2f}"
+      )
+
+    # Display Status on Streamlit Dashboard
+    if exchange_executed:
+      st.success(execution_msg)
+    else:
+      st.info(execution_msg)
 
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
@@ -984,9 +985,9 @@ if execute_btn:
       with w4:
         neu_d = tot_d - (long_d + short_d)
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral'
-            f' Signals</div><div style="font-size:18px; font-weight:700;'
-            f' color:#8b949e; margin-top:4px;">{neu_d}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
+            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
+            f' margin-top:4px;">{neu_d}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -995,8 +996,7 @@ if execute_btn:
       with ww1:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (This Week)</div><div'
-            f' class="metric-value-blue">{tot_w}</div></div>',
+            f' (Week)</div><div class="metric-value-blue">{tot_w}</div></div>',
             unsafe_allow_html=True,
         )
       with ww2:
@@ -1011,16 +1011,16 @@ if execute_btn:
         sc_col_w = "#00e676" if avg_s_w >= 0 else "#ff5252"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (This Week)</div><div style="font-size:18px; font-weight:700;'
+            f' (Week)</div><div style="font-size:18px; font-weight:700;'
             f' color:{sc_col_w}; margin-top:4px;">{avg_s_w:+.3f}</div></div>',
             unsafe_allow_html=True,
         )
       with ww4:
         neu_w = tot_w - (long_w + short_w)
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral'
-            f' Signals</div><div style="font-size:18px; font-weight:700;'
-            f' color:#8b949e; margin-top:4px;">{neu_w}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
+            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
+            f' margin-top:4px;">{neu_w}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -1029,8 +1029,7 @@ if execute_btn:
       with mm1:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (This Month)</div><div'
-            f' class="metric-value-blue">{tot_m}</div></div>',
+            f' (Month)</div><div class="metric-value-blue">{tot_m}</div></div>',
             unsafe_allow_html=True,
         )
       with mm2:
@@ -1045,41 +1044,15 @@ if execute_btn:
         sc_col_m = "#00e676" if avg_s_m >= 0 else "#ff5252"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (This Month)</div><div style="font-size:18px; font-weight:700;'
+            f' (Month)</div><div style="font-size:18px; font-weight:700;'
             f' color:{sc_col_m}; margin-top:4px;">{avg_s_m:+.3f}</div></div>',
             unsafe_allow_html=True,
         )
       with mm4:
         neu_m = tot_m - (long_m + short_m)
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral'
-            f' Signals</div><div style="font-size:18px; font-weight:700;'
-            f' color:#8b949e; margin-top:4px;">{neu_m}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
+            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
+            f' margin-top:4px;">{neu_m}</div></div>',
             unsafe_allow_html=True,
         )
-
-  # ==========================================
-  # SAVED SIGNAL HISTORY LOG
-  # ==========================================
-  st.markdown("---")
-  st.subheader("⚡ Saved Signal History Log")
-  if st.session_state.trade_history_log:
-    history_display_list = [
-        {k: v for k, v in item.items() if k != "bucket"}
-        for item in st.session_state.trade_history_log
-    ]
-    history_df = pd.DataFrame(history_display_list)[[
-        "timestamp",
-        "symbol",
-        "timeframe",
-        "direction",
-        "score",
-        "price",
-        "outcome",
-    ]]
-    st.dataframe(
-        history_df, use_container_width=True, hide_index=True, height=320
-    )
-  else:
-    st.info("No signal history logged yet.")
-  
