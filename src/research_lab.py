@@ -29,7 +29,6 @@ class TenPaperResearchLab:
         results['OFI'] = (bid_vol - ask_vol) / (bid_vol + ask_vol + 1e-8)
 
         # 2. TSMOM (Time-Series Momentum) - Moskowitz et al. (2012)
-        # Using 5-candle ROC for faster bearish/bullish detection
         returns_h = (df['Close'].iloc[-1] - df['Close'].iloc[-5]) / df['Close'].iloc[-5]
         realized_vol = df['Close'].pct_change().std() + 1e-8
         results['TSMOM'] = np.clip((returns_h / realized_vol) * 2.0, -1, 1)
@@ -39,7 +38,6 @@ class TenPaperResearchLab:
         q_b, q_a = bids[0, 1], asks[0, 1]
         micro_price = (q_b * best_bid + q_a * best_ask) / (q_b + q_a + 1e-8)
         mid_price = (best_bid + best_ask) / 2
-        # Sensitivity boosted by 5x
         results['MICRO'] = np.clip((micro_price - mid_price) / (mid_price * 0.0002), -1, 1)
 
         # 4. AVST (Avellaneda & Stoikov MM Model) - (2008)
@@ -86,3 +84,33 @@ class TenPaperResearchLab:
         final_score = sum(results[paper] * weights[paper] for paper in results)
         
         return results, final_score, weights
+
+
+# === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
+class PowerTradingRiskEngine:
+    def __init__(self):
+        pass
+
+    def calculate_risk_metrics(self, liquidation_volumes, displayed_vol, cancelled_vol, time_exists, obs_window, open_interest, leverage, volatility):
+        # 1. LTZ (Liquidation Trace Zone Score)
+        total_ltz = np.sum(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
+        max_ltz = np.max(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
+        ltz_score = (max_ltz / (total_ltz + 1e-8)) * 100
+
+        # 2. Spoof Score (Order Book Manipulation Detection)
+        spoof_ratio = cancelled_vol / (displayed_vol + 1e-8)
+        persistence = min(max(time_exists / (obs_window + 1e-8), 0), 1)
+        spoof_score = spoof_ratio * (1 - persistence)
+
+        # 3. Squeeze Risk
+        squeeze_risk = total_ltz * open_interest * leverage * volatility
+
+        # 4. Composite Market Risk
+        market_risk = ltz_score + spoof_score + squeeze_risk
+        
+        return {
+            'LTZ_Score': ltz_score,
+            'Spoof_Score': spoof_score,
+            'Squeeze_Risk': squeeze_risk,
+            'Market_Risk': market_risk
+        }
