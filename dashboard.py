@@ -139,7 +139,7 @@ def fetch_order_book_depth(symbol, depth_limit=10):
         return np.array([]), np.array([])
 
 # ==========================================
-# BACKGROUND MULTI-COIN SCANNER & AUTO R:R
+# BACKGROUND MULTI-COIN SCANNER & AUTO R:R (FIXED WITH HIGH/LOW WICKS)
 # ==========================================
 def compute_signal_light(df_in, bids_in, asks_in, history):
     lab = TenPaperResearchLab()
@@ -154,30 +154,51 @@ def compute_signal_light(df_in, bids_in, asks_in, history):
     trajectory_dir = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
     return final_score, trajectory_dir, close_p
 
-def check_auto_outcome(entry_price, current_price, direction, sl_distance):
+def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
+    """
+    Checks High and Low across the recent candles to accurately 
+    determine if Take Profit (TP) or Stop Loss (SL) was hit first.
+    """
     tp_distance = sl_distance * 2
+    
     if direction == "LONG":
-        if current_price >= (entry_price + tp_distance):
-            return "WIN"
-        elif current_price <= (entry_price - sl_distance):
-            return "LOSS"
+        tp_price = entry_price + tp_distance
+        sl_price = entry_price - sl_distance
+        
+        for _, row in df_candles.iterrows():
+            if row['High'] >= tp_price:
+                return "WIN"
+            if row['Low'] <= sl_price:
+                return "LOSS"
+                
     elif direction == "SHORT":
-        if current_price <= (entry_price - tp_distance):
-            return "WIN"
-        elif current_price >= (entry_price + tp_distance):
-            return "LOSS"
+        tp_price = entry_price - tp_distance
+        sl_price = entry_price + sl_distance
+        
+        for _, row in df_candles.iterrows():
+            if row['Low'] <= tp_price:
+                return "WIN"
+            if row['High'] >= sl_price:
+                return "LOSS"
+                
     return "PENDING"
 
-# Run Auto Outcome checker for all existing pending trades using latest prices
+# Run Auto Outcome checker for all existing pending trades using candle High/Low
 history_updated = False
 for item in st.session_state.trade_history_log:
     if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
-        curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=5)
+        curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=15)
         if not curr_df.empty:
-            curr_price = curr_df['Close'].iloc[-1]
+            signal_time = pd.to_datetime(item['timestamp'])
+            future_candles = curr_df[curr_df['Time'] >= signal_time]
+            
+            if future_candles.empty:
+                future_candles = curr_df 
+                
             atr_val = (curr_df['High'] - curr_df['Low']).mean()
             sl_dist = atr_val if not np.isnan(atr_val) and atr_val > 0 else (item['price'] * 0.01)
-            res_status = check_auto_outcome(item['price'], curr_price, item['direction'], sl_dist)
+            
+            res_status = check_auto_outcome(item['price'], future_candles, item['direction'], sl_dist)
             if res_status != "PENDING":
                 item['outcome'] = res_status
                 history_updated = True
@@ -401,7 +422,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             c_losses = len(coin_df[coin_df['outcome'] == 'LOSS'])
             c_closed = c_wins + c_losses
             c_wr = (c_wins / c_closed * 100) if c_closed > 0 else 0.0
-            # Assuming 1:2 R:R with $2 risk per trade ($4 win, $2 loss)
             c_net_pnl = (c_wins * 4) - (c_losses * 2)
             
             coin_perf_list.append({
@@ -413,7 +433,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             })
         
         df_coin_perf = pd.DataFrame(coin_perf_list)
-        # Sort by estimated profit descending
         df_coin_perf['sort_val'] = df_coin_perf['Est. PnL ($)'].str.replace('$', '').str.replace('+', '').astype(int)
         df_coin_perf = df_coin_perf.sort_values(by='sort_val', ascending=False).drop(columns=['sort_val'])
         
