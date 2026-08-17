@@ -99,24 +99,24 @@ TIMEFRAME_MAP = {
 }
 
 st.sidebar.markdown("### ⚡ Terminal Controls")
-selected_symbol = st.sidebar.selectbox("Select Cryptocurrency", COINS_LIST, index=0)
+selected_symbol = st.sidebar.selectbox("Select Cryptocurrency (For View)", COINS_LIST, index=0)
 selected_tf_label = st.sidebar.selectbox("Select Timeframe", list(TIMEFRAME_MAP.keys()), index=3)
 forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
-st.sidebar.success("🟢 **System Status: Operational**")
+st.sidebar.success("🟢 **System Status: Multi-Coin Scanner Active**")
 
 api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
 # ==========================================
-# DATA FETCHING
+# DATA FETCHING HELPERS
 # ==========================================
 @st.cache_data(ttl=15)
 def fetch_klines_data(symbol, tf_label, limit=100):
     binance_tf = "5m" if tf_label == "10m" else tf_label
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
     try:
-        res = requests.get(url, timeout=5).json()
+        res = requests.get(url, timeout=3).json()
         if isinstance(res, dict) and "code" in res:
             return pd.DataFrame()
         df = pd.DataFrame(res, columns=['Open_Time', 'Open', 'High', 'Low', 'Close', 'Volume', 'Close_Time', 'QAV', 'NAT', 'TBBAV', 'TBQAV', 'Ignore'])
@@ -131,25 +131,102 @@ def fetch_klines_data(symbol, tf_label, limit=100):
 def fetch_order_book_depth(symbol, depth_limit=10):
     try:
         url = f"https://data-api.binance.vision/api/v3/depth?symbol={symbol}&limit={depth_limit}"
-        res = requests.get(url, timeout=5).json()
+        res = requests.get(url, timeout=3).json()
         if 'bids' in res and 'asks' in res:
             return np.array(res['bids'], dtype=float), np.array(res['asks'], dtype=float)
         return np.array([]), np.array([])
     except Exception:
         return np.array([]), np.array([])
 
+# ==========================================
+# BACKGROUND MULTI-COIN SCANNER & AUTO R:R
+# ==========================================
+def compute_signal_light(df_in, bids_in, asks_in, history):
+    lab = TenPaperResearchLab()
+    try:
+        paper_results, final_score, evolved_weights = lab.calculate_all_signals(
+            df_in, bids_in, asks_in, current_inventory=0, performance_history=history
+        )
+    except Exception:
+        final_score = -0.136
+
+    close_p = df_in['Close'].iloc[-1]
+    trajectory_dir = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
+    return final_score, trajectory_dir, close_p
+
+def check_auto_outcome(entry_price, current_price, direction, sl_distance):
+    tp_distance = sl_distance * 2
+    if direction == "LONG":
+        if current_price >= (entry_price + tp_distance):
+            return "WIN"
+        elif current_price <= (entry_price - sl_distance):
+            return "LOSS"
+    elif direction == "SHORT":
+        if current_price <= (entry_price - tp_distance):
+            return "WIN"
+        elif current_price >= (entry_price + tp_distance):
+            return "LOSS"
+    return "PENDING"
+
+# Run Auto Outcome checker for all existing pending trades using latest prices
+history_updated = False
+for item in st.session_state.trade_history_log:
+    if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
+        # Quick fetch current price for the coin in history
+        curr_df = fetch_klines_data(item['symbol'], item['timeframe'], limit=5)
+        if not curr_df.empty:
+            curr_price = curr_df['Close'].iloc[-1]
+            atr_val = (curr_df['High'] - curr_df['Low']).mean()
+            sl_dist = atr_val if not np.isnan(atr_val) and atr_val > 0 else (item['price'] * 0.01)
+            res_status = check_auto_outcome(item['price'], curr_price, item['direction'], sl_dist)
+            if res_status != "PENDING":
+                item['outcome'] = res_status
+                history_updated = True
+
+if history_updated:
+    save_persistent_history(st.session_state.trade_history_log)
+
+# Scan ALL coins in the list for the current timeframe bucket
+lock_seconds = tf_minutes * 60
+current_time_sec = int(time.time())
+time_bucket = current_time_sec - (current_time_sec % lock_seconds)
+time_remaining = lock_seconds - (current_time_sec % lock_seconds)
+
+existing_buckets = [item.get("bucket") for item in st.session_state.trade_history_log]
+scanner_updated = False
+
+for coin in COINS_LIST:
+    global_bucket = f"{coin}_{selected_tf_label}_{time_bucket}"
+    if global_bucket not in existing_buckets:
+        c_df = fetch_klines_data(coin, selected_tf_label)
+        c_bids, c_asks = fetch_order_book_depth(coin)
+        if not c_df.empty and len(c_df) >= 3 and len(c_bids) > 0 and len(c_asks) > 0:
+            score, direction, close_p = compute_signal_light(c_df, c_bids, c_asks, st.session_state.trade_history_log)
+            new_entry = {
+                "bucket": global_bucket,
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "symbol": coin,
+                "timeframe": selected_tf_label,
+                "direction": direction,
+                "score": round(score, 3),
+                "price": round(close_p, 2),
+                "outcome": "PENDING"
+            }
+            st.session_state.trade_history_log.insert(0, new_entry)
+            scanner_updated = True
+
+if scanner_updated:
+    save_persistent_history(st.session_state.trade_history_log)
+
+# ==========================================
+# FETCH DATA FOR SELECTED VIEW COIN
+# ==========================================
 df = fetch_klines_data(selected_symbol, selected_tf_label)
 bids, asks = fetch_order_book_depth(selected_symbol)
 
-st.markdown("## ⚡ Research Lab — Multi-Asset Signal Engine")
+st.markdown("## ⚡ Research Lab — Multi-Asset Signal Engine (All-Coin Auto Scanner)")
 
 if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
-    
-    lock_seconds = tf_minutes * 60
-    current_time_sec = int(time.time())
-    time_bucket = current_time_sec - (current_time_sec % lock_seconds)
-    global_bucket = f"{selected_symbol}_{selected_tf_label}_{time_bucket}"
-    time_remaining = lock_seconds - (current_time_sec % lock_seconds)
 
     def compute_signal(df_in, bids_in, asks_in, history):
         lab = TenPaperResearchLab()
@@ -170,7 +247,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         atr_val = (df_in['High'] - df_in['Low']).rolling(14).mean().iloc[-1]
         beam_level = close_p + (1.8 * atr_val)
         base_level = close_p - (1.8 * atr_val)
-        
         trajectory_dir = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
 
         return {
@@ -181,62 +257,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     signal = compute_signal(df, bids, asks, st.session_state.trade_history_log)
 
-    # ==========================================
-    # AUTO 1:2 RISK-REWARD OUTCOME CHECKER
-    # ==========================================
-    def check_auto_outcome(entry_price, current_price, direction, sl_distance):
-        tp_distance = sl_distance * 2
-        
-        if direction == "LONG":
-            if current_price >= (entry_price + tp_distance):
-                return "WIN"
-            elif current_price <= (entry_price - sl_distance):
-                return "LOSS"
-        elif direction == "SHORT":
-            if current_price <= (entry_price - tp_distance):
-                return "WIN"
-            elif current_price >= (entry_price + tp_distance):
-                return "LOSS"
-        return "PENDING"
-
-    atr_current = (df['High'] - df['Low']).mean()
-    sl_dist_default = atr_current * 1.0
-
-    history_updated = False
-    for item in st.session_state.trade_history_log:
-        if item.get('outcome', 'PENDING') == 'PENDING' and item.get('direction') != 'NEUTRAL':
-            res_status = check_auto_outcome(item['price'], signal['close_price'], item['direction'], sl_dist_default)
-            if res_status != "PENDING":
-                item['outcome'] = res_status
-                history_updated = True
-
-    if history_updated:
-        save_persistent_history(st.session_state.trade_history_log)
-
-    existing_buckets = [item.get("bucket") for item in st.session_state.trade_history_log]
-    if global_bucket not in existing_buckets:
-        new_entry = {
-            "bucket": global_bucket,
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "symbol": selected_symbol,
-            "timeframe": selected_tf_label,
-            "direction": signal["direction"],
-            "score": round(signal["score"], 3),
-            "price": round(signal["close_price"], 2),
-            "outcome": "PENDING"
-        }
-        st.session_state.trade_history_log.insert(0, new_entry)
-        save_persistent_history(st.session_state.trade_history_log)
-
     mins_rem = time_remaining // 60
     secs_rem = time_remaining % 60
     dir_color = "#00e676" if signal['direction'] == "LONG" else ("#ff5252" if signal['direction'] == "SHORT" else "#38bdf8")
 
     st.markdown(f"""
     <div class="top-status-bar">
-        🔵 <b>[{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
+        🔵 <b>Viewing: [{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
         Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
-        ⏳ Candle Close In: <b>{mins_rem}m {secs_rem}s</b> (Auto 1:2 R:R Tracking Active)
+        ⏳ Next Multi-Coin Scan In: <b>{mins_rem}m {secs_rem}s</b>
     </div>
     """, unsafe_allow_html=True)
 
@@ -267,7 +296,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     col_chart, col_side = st.columns([2.5, 1])
 
     with col_chart:
-        st.subheader(f"Price Chart ({selected_tf_label})")
+        st.subheader(f"Price Chart ({selected_symbol} - {selected_tf_label})")
         time_delta = pd.Timedelta(minutes=tf_minutes)
         future_times = [df['Time'].iloc[-1] + (i * time_delta) for i in range(1, forecast_horizon + 1)]
         t_steps = np.linspace(0, np.pi / 2, forecast_horizon)
@@ -333,7 +362,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # PERFORMANCE & ANALYTICS SECTION + WIN RATE
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Performance, Analytics & Win Rate Tracking (Auto 1:2 R:R)")
+    st.subheader("📊 Performance, Analytics & Win Rate Tracking (All-Coin Auto Scan)")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -353,7 +382,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
         wr1, wr2, wr3, wr4 = st.columns(4)
         with wr1:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Overall Win Rate</div><div class="metric-value-green">{overall_win_rate:.1f}%</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Overall Win Rate (All Coins)</div><div class="metric-value-green">{overall_win_rate:.1f}%</div></div>', unsafe_allow_html=True)
         with wr2:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Total Wins (W)</div><div style="font-size:20px; font-weight:700; color:#00e676; margin-top:4px;">{total_wins}</div></div>', unsafe_allow_html=True)
         with wr3:
@@ -422,14 +451,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 st.markdown(f'<div class="metric-card"><div class="metric-label">Neutral Signals</div><div style="font-size:18px; font-weight:700; color:#8b949e; margin-top:4px;">{neu_m}</div></div>', unsafe_allow_html=True)
 
     # ==========================================
-    # SAVED SIGNAL HISTORY LOG (FULL WIDTH)
+    # SAVED SIGNAL HISTORY LOG (FULL WIDTH - ALL COINS)
     # ==========================================
     st.markdown("---")
-    st.subheader("⚡ Saved Signal History Log (Auto Tracked)")
+    st.subheader("⚡ Saved Signal History Log (All Coins Auto Tracked)")
     if st.session_state.trade_history_log:
         history_display_list = [{k: v for k, v in item.items() if k != 'bucket'} for item in st.session_state.trade_history_log]
         history_df = pd.DataFrame(history_display_list)[['timestamp', 'symbol', 'timeframe', 'direction', 'score', 'price', 'outcome']]
-        st.dataframe(history_df, use_container_width=True, hide_index=True, height=280)
+        st.dataframe(history_df, use_container_width=True, hide_index=True, height=320)
     else:
         st.info("No signal history logged yet.")
 
