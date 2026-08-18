@@ -7,63 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
-DATA_FILE = "trade_signals_history.json"
 
-
-def load_trade_data():
-  if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-      try:
-        return json.load(f)
-      except json.JSONDecodeError:
-        return []
-  return []
-
-
-def save_trade_data(data):
-  with open(DATA_FILE, "w") as f:
-    json.dump(data, f, indent=4)
-
-
-def log_signal(symbol, side, score, status="Pending"):
-  """Logs a new trade signal with timestamp, side, score, and initial status."""
-  history = load_trade_data()
-
-  new_signal = {
-      "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-      "date": datetime.now().strftime("%Y-%m-%d"),
-      "week": datetime.now().strftime("%Y-W%V"),  # Year and Week number
-      "symbol": symbol,
-      "side": side.upper(),  # LONG or SHORT
-      "score": score,
-      "status": status,  # Win, Loss, or Pending
-  }
-
-  history.append(new_signal)
-  save_trade_data(history)
-
-
-def update_signal_status(timestamp, symbol, new_status):
-  """Updates whether a specific trade was a Win or Loss."""
-  history = load_trade_data()
-  for item in history:
-    if item["timestamp"] == timestamp and item["symbol"] == symbol:
-      item["status"] = new_status
-      break
-  save_trade_data(history)
-
-
-def get_weekly_performance():
-  """Aggregates weekly total signals, long/short counts, and wins/losses."""
-  history = load_trade_data()
-  if not history:
-    return pd.DataFrame()
-
-  df = pd.DataFrame(history)
-  current_week = datetime.now().strftime("%Y-W%V")
-  weekly_df = df[df["week"] == current_week]
-
-  return weekly_df
 # ==========================================
 # EXCHANGE CONNECTION HELPER
 # ==========================================
