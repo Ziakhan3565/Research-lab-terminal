@@ -70,7 +70,6 @@ st.set_page_config(
 )
 
 CSV_FILE = "signal_history.csv"
-TRADES_CSV_FILE = "live_trades_history.csv"
 
 
 def load_persistent_history():
@@ -97,28 +96,8 @@ def save_persistent_history(history_list):
     st.error(f"Error saving history: {e}")
 
 
-def load_trades_history():
-  if os.path.exists(TRADES_CSV_FILE):
-    try:
-      return pd.read_csv(TRADES_CSV_FILE).to_dict("records")
-    except Exception:
-      return []
-  return []
-
-
-def save_trades_history(trades_list):
-  try:
-    df_trades = pd.DataFrame(trades_list)
-    df_trades.to_csv(TRADES_CSV_FILE, index=False)
-  except Exception as e:
-    st.error(f"Error saving trades: {e}")
-
-
 if "trade_history_log" not in st.session_state:
   st.session_state.trade_history_log = load_persistent_history()
-
-if "active_trades_log" not in st.session_state:
-  st.session_state.active_trades_log = load_trades_history()
 
 # ==========================================
 # RESPONSIVE STYLING
@@ -188,7 +167,7 @@ selected_tf_label = st.sidebar.selectbox(
 forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
-st.sidebar.success("🟢 **System Status: Paper & Signal Lab Active**")
+st.sidebar.success("🟢 **System Status: Signal Lab Active**")
 
 api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
@@ -494,75 +473,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-  # PAPER TRADE SIMULATION PANEL
-  # ==========================================
-  st.markdown("---")
-  st.subheader("🚀 Paper Trade Simulation & Setup Panel")
-
-  t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
-
-  with t_col1:
-    trade_action = st.selectbox(
-        "Action",
-        (
-            ["BUY / LONG", "SELL / SHORT"]
-            if "signal" not in locals() or signal.get("direction") != "SHORT"
-            else ["SELL / SHORT", "BUY / LONG"]
-        ),
-    )
-  with t_col2:
-    order_size_usdt = st.number_input(
-        "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
-    )
-  with t_col3:
-    leverage_val = st.slider("Leverage (x)", 1, 50, 10)
-  with t_col4:
-    sl_pct = st.number_input(
-        "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
-    )
-    tp_pct = st.number_input(
-        "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
-    )
-  with t_col5:
-    st.markdown("<br>", unsafe_allow_html=True)
-    execute_btn = st.button(
-        "⚡ Simulate Paper Trade", use_container_width=True, type="primary"
-    )
-
-  if execute_btn:
-    direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
-    entry_p = close_val if "close_val" in locals() else 1.0
-
-    if direction_tag == "LONG":
-      stop_loss_price = entry_p * (1 - sl_pct / 100)
-      take_profit_price = entry_p * (1 + tp_pct / 100)
-    else:
-      stop_loss_price = entry_p * (1 + sl_pct / 100)
-      take_profit_price = entry_p * (1 - tp_pct / 100)
-
-    sim_trade_entry = {
-        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "symbol": selected_symbol,
-        "timeframe": selected_tf_label,
-        "direction": direction_tag,
-        "entry_price": round(entry_p, 2),
-        "size_usdt": order_size_usdt,
-        "leverage": leverage_val,
-        "stop_loss": round(stop_loss_price, 2),
-        "take_profit": round(take_profit_price, 2),
-        "outcome": "PENDING",
-    }
-    st.session_state.active_trades_log.insert(0, sim_trade_entry)
-    save_trades_history(st.session_state.active_trades_log)
-    st.success(
-        f"Paper Trade Simulated & Logged! Dir: {direction_tag} | Entry:"
-        f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
-        f" ${take_profit_price:,.2f}"
-    )
-
-  # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
   # ==========================================
+  st.markdown("---")
   st.markdown("### ⚡ Power Trading & Risk Monitoring Engine")
   r1, r2, r3, r4 = st.columns(4)
   with r1:
@@ -767,7 +680,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
   # PERFORMANCE & HISTORICAL LOG SECTION
   # ==========================================
   st.markdown("---")
-  st.subheader("📊 Performance, Analytics & Trade History Log")
+  st.subheader("📊 Performance, Analytics & Automated Trade History Log")
 
   if st.session_state.trade_history_log:
     df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -812,19 +725,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
           unsafe_allow_html=True,
       )
 
-    st.markdown("### 📜 Automated Signal History Log")
+    st.markdown("### 📜 Automated Signal & Outcome Log")
     st.dataframe(
         df_log.drop(columns=["bucket", "dt", "date"], errors="ignore"),
         use_container_width=True,
         hide_index=True,
-        height=240,
+        height=260,
     )
-
-  if st.session_state.active_trades_log:
-    st.markdown("### 📝 Manual Simulated Trades History")
-    df_trades_log = pd.DataFrame(st.session_state.active_trades_log)
-    st.dataframe(
-        df_trades_log, use_container_width=True, hide_index=True, height=220
+  else:
+    st.info(
+        "No trade or signal history logged yet. History will populate"
+        " automatically as candles update."
     )
 
 else:
@@ -832,4 +743,3 @@ else:
       "⚠️ Unable to fetch live market data or order book depth. Please verify"
       " network connection or select a different asset/timeframe."
   )
-  
