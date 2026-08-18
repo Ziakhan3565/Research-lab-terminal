@@ -578,58 +578,36 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     execution_msg = ""
 
     # 2. Live Exchange Execution Check
-    if (
-        "trading_mode" in locals()
-        and trading_mode == "Live/Real"
-        and "api_key" in locals()
-        and api_key
-        and "api_secret" in locals()
-        and api_secret
-    ):
-      try:
-        EXCHANGE_CLASS = getattr(ccxt, exchange_name)
-        ex_inst = EXCHANGE_CLASS({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-        })
-        ex_inst.load_markets()
-        try:
-          ex_inst.set_leverage(leverage_val, selected_symbol)
-        except Exception:
-          pass
+    def get_exchange_connection(exchange_name, api_key, api_secret, mode):
+    # Mapping for exchange classes
+    exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
 
-        side_str = "buy" if direction_tag == "LONG" else "sell"
+    if exchange_name not in exchanges:
+        return None
 
-        # Placing main market order
-        order_res = ex_inst.create_market_order(selected_symbol, side_str, qty)
+    exchange_class = exchanges[exchange_name]
+    
+    # Common config
+    config = {
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+    }
 
-        # Parameters for SL and TP
-        params = {
-            "stopLossPrice": round(stop_loss_price, 2),
-            "takeProfitPrice": round(take_profit_price, 2),
-        }
+    # MODE LOGIC:
+    # 1. Agar mode 'Demo' hai aur exchange Binance/Bybit hai -> Sandbox/Testnet enable karo
+    # 2. Agar mode 'Real' hai -> Normal connection
+    # 3. MEXC ke liye sirf 'Real' allow hai
+    
+    if mode == "Demo Trading":
+        if exchange_name in ["bybit", "binance"]:
+            config["sandboxMode"] = True  # CCXT mein ye automatically testnet/sandbox select kar leta hai
+        else:
+            # MEXC ke liye demo/testnet API support limited hai, isliye fallback to paper
+            return None 
 
-        execution_msg = (
-            f"Live Order Successful! ID: {order_res.get('id', 'N/A')} | SL:"
-            f" ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
-        )
-        exchange_executed = True
-      except Exception as e:
-        execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
-    else:
-      # Paper Mode Simulation Message
-      execution_msg = (
-          f"Paper Trade Simulated! Dir: {direction_tag} | Entry:"
-          f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
-          f" ${take_profit_price:,.2f}"
-      )
-
-    # Display Status on Streamlit Dashboard
-    if exchange_executed:
-      st.success(execution_msg)
-    else:
-      st.info(execution_msg)
+    exchange = exchange_class(config)
+    return exchange
 
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
