@@ -542,154 +542,110 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     execute_btn = st.button(
         "⚡ Execute Trade Order", use_container_width=True, type="primary"
     )
-
-  # ==========================================
-    # EXECUTION BUTTON LOGIC
+# ==========================================
+    # EXECUTION BUTTON LOGIC (FIXED FOR BINANCE DEMO)
     # ==========================================
     if execute_btn:
-        # 1. Determine Direction & Calculations
-        if auto_trade_mode:
-            direction_tag = (
-                signal["direction"]
-                if "signal" in locals() and signal.get("direction")
-                else "LONG"
-            )
-            if direction_tag == "NEUTRAL":
-                direction_tag = "LONG"
-        else:
-            direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+      # 1. Determine Direction & Calculations
+      if auto_trade_mode:
+        direction_tag = (
+            signal["direction"]
+            if "signal" in locals() and signal.get("direction")
+            else "LONG"
+        )
+        if direction_tag == "NEUTRAL":
+          direction_tag = "LONG"
+      else:
+        direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
 
-        # Fallback agar close_val defined na ho
-        entry_p = close_val if "close_val" in locals() else 0.0
-        if entry_p <= 0:
-            entry_p = 1.0  # Safe fallback
+      entry_p = close_val if "close_val" in locals() and close_val > 0 else 1.0
+      qty = (order_size_usdt * leverage_val) / entry_p
 
-        qty = (order_size_usdt * leverage_val) / entry_p
+      # SL and TP Price Calculations
+      if direction_tag == "LONG":
+        stop_loss_price = entry_p * (1 - sl_pct / 100)
+        take_profit_price = entry_p * (1 + tp_pct / 100)
+      else:
+        stop_loss_price = entry_p * (1 + sl_pct / 100)
+        take_profit_price = entry_p * (1 - tp_pct / 100)
 
-        # SL and TP Price Calculations
-        if direction_tag == "LONG":
-            stop_loss_price = entry_p * (1 - sl_pct / 100)
-            take_profit_price = entry_p * (1 + tp_pct / 100)
-        else:
-            stop_loss_price = entry_p * (1 + sl_pct / 100)
-            take_profit_price = entry_p * (1 - tp_pct / 100)
+      # 2. Live/Testnet Exchange Connection Helper Function
+      def get_exchange_connection(ex_name, key, secret, mode):
+        exchanges = {
+            "bybit": ccxt.bybit,
+            "binance": ccxt.binanceusdm,  # USDT-M Futures Client for Binance
+            "mexc": ccxt.mexc,
+        }
 
-        # 2. Live Exchange Connection Helper Function
-        def get_exchange_connection(ex_name, key, secret, mode):
-            exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
+        if ex_name not in exchanges:
+          return None
 
-            if ex_name not in exchanges:
-                return None
+        exchange_class = exchanges[ex_name]
 
-            exchange_class = exchanges[ex_name]
-            
-            config = {
-                "apiKey": key,
-                "secret": secret,
-                "enableRateLimit": True,
-            }
+        config = {
+            "apiKey": key,
+            "secret": secret,
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        }
 
-            # MODE LOGIC: Binance & Bybit support Demo/Sandbox, MEXC restricted to Real only
-            if mode == "Demo Trading":
-                if ex_name in ["bybit", "binance"]:
-                    config["sandboxMode"] = True
-                else:
-                    return None
+        client = exchange_class(config)
 
-            return exchange_class(config)
+        if mode in ["Paper Trading", "Demo Trading"]:
+          if ex_name in ["bybit", "binance"]:
+            client.set_sandbox_mode(True)  # Enable Testnet Sandbox
+          else:
+            return None
 
-       # ==========================================
-    # EXECUTION BUTTON LOGIC
-    # ==========================================
-    if execute_btn:
-        # 1. Determine Direction & Calculations
-        if auto_trade_mode:
-            direction_tag = (
-                signal["direction"]
-                if "signal" in locals() and signal.get("direction")
-                else "LONG"
-            )
-            if direction_tag == "NEUTRAL":
-                direction_tag = "LONG"
-        else:
-            direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+        return client
 
-        # Fallback agar close_val defined na ho
-        entry_p = close_val if "close_val" in locals() else 0.0
-        if entry_p <= 0:
-            entry_p = 1.0  # Safe fallback
+      # Check MEXC Restriction for Demo
+      if (
+          trading_mode in ["Paper Trading", "Demo Trading"]
+      ) and exchange_name == "mexc":
+        st.warning(
+            "⚠️ MEXC does not support Demo/Paper Trading via API. Aborting"
+            " execution."
+        )
+      else:
+        try:
+          exchange_client = get_exchange_connection(
+              exchange_name, api_key, api_secret, trading_mode
+          )
 
-        qty = (order_size_usdt * leverage_val) / entry_p
+          if exchange_client:
+            # Load markets before order placement
+            exchange_client.load_markets()
 
-        # SL and TP Price Calculations
-        if direction_tag == "LONG":
-            stop_loss_price = entry_p * (1 - sl_pct / 100)
-            take_profit_price = entry_p * (1 + tp_pct / 100)
-        else:
-            stop_loss_price = entry_p * (1 + sl_pct / 100)
-            take_profit_price = entry_p * (1 - tp_pct / 100)
+            symbol_ccxt = selected_symbol.replace(
+                "USDT", "/USDT"
+            )  # e.g., BTC/USDT
+            side = "buy" if direction_tag == "LONG" else "sell"
 
-        # 2. Live/Testnet Exchange Connection Helper Function
-        def get_exchange_connection(ex_name, key, secret, mode):
-            exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
-
-            if ex_name not in exchanges:
-                return None
-
-            exchange_class = exchanges[ex_name]
-            
-            config = {
-                "apiKey": key,
-                "secret": secret,
-                "enableRateLimit": True,
-            }
-
-            # Agar Binance ya Bybit hai aur Paper/Demo mode hai toh futures default type set karein aur sandbox mode enable karein
-            if ex_name == "binance":
-                config["options"] = {"defaultType": "future"}
-
-            client = exchange_class(config)
-
-            if mode in ["Paper Trading", "Demo Trading"]:
-                if ex_name in ["bybit", "binance"]:
-                    client.set_sandbox_mode(True)
-                else:
-                    return None
-
-            return client
-
-        # Connection call
-        exchange_client = get_exchange_connection(exchange_name, api_key, api_secret, trading_mode)
-        
-        if (trading_mode in ["Paper Trading", "Demo Trading"]) and exchange_name == "mexc":
-            st.warning("⚠️ MEXC does not support Demo/Paper Trading via API. Aborting execution.")
-        elif exchange_client:
+            # Set leverage
             try:
-                # Load markets data required by CCXT before placing orders
-                exchange_client.load_markets()
-                
-                symbol_ccxt = selected_symbol.replace("USDT", "/USDT") # e.g., BTC/USDT format for CCXT
-                side = "buy" if direction_tag == "LONG" else "sell"
-                
-                # Set leverage if supported
-                try:
-                    exchange_client.set_leverage(leverage_val, symbol_ccxt)
-                except Exception:
-                    pass
+              exchange_client.set_leverage(
+                  leverage_val, symbol_ccxt.replace("/", "")
+              )
+            except Exception:
+              pass
 
-                # Execute Market Order
-                order = exchange_client.create_market_order(
-                    symbol=symbol_ccxt,
-                    side=side,
-                    amount=qty
-                )
-                
-                st.success(f"🚀 Order Successfully Executed on {exchange_name.upper()} ({trading_mode})! ID: {order.get('id', 'N/A')}")
-                
-            except Exception as ex:
-                st.error(f"❌ Order Execution Failed: {str(ex)}")
-        else:
-            st.error("Failed to connect. Please check your API keys or settings.")
+            # Execute Market Order
+            order = exchange_client.create_market_order(
+                symbol=symbol_ccxt, side=side, amount=qty
+            )
+
+            st.success(
+                f"🚀 Order Successfully Executed on {exchange_name.upper()}"
+                f" ({trading_mode})! Order ID: {order.get('id', 'N/A')}"
+            )
+          else:
+            st.error(
+                "Failed to configure exchange client. Check your settings."
+            )
+
+        except Exception as ex:
+          st.error(f"❌ Order Execution Failed: {str(ex)}")
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
   # ==========================================
