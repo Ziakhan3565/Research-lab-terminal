@@ -544,71 +544,69 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-  # EXECUTION BUTTON LOGIC
-  # ==========================================
-  if execute_btn:
-    # 1. Determine Direction & Calculations
-    if auto_trade_mode:
-      direction_tag = (
-          signal["direction"]
-          if "signal" in locals() and signal.get("direction")
-          else "LONG"
-      )
-      if direction_tag == "NEUTRAL":
-        direction_tag = "LONG"
-    else:
-      direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
-
-    # Fallback agar close_val defined na ho
-    entry_p = close_val if "close_val" in locals() else 0.0
-    if entry_p <= 0:
-      entry_p = 1.0  # Safe fallback
-
-    qty = (order_size_usdt * leverage_val) / entry_p
-
-    # SL and TP Price Calculations
-    if direction_tag == "LONG":
-      stop_loss_price = entry_p * (1 - sl_pct / 100)
-      take_profit_price = entry_p * (1 + tp_pct / 100)
-    else:
-      stop_loss_price = entry_p * (1 + sl_pct / 100)
-      take_profit_price = entry_p * (1 - tp_pct / 100)
-
-    exchange_executed = False
-    execution_msg = ""
-
-    # 2. Live Exchange Execution Check
-    def get_exchange_connection(exchange_name, api_key, api_secret, mode):
-    # Mapping for exchange classes
-    exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
-
-    if exchange_name not in exchanges:
-        return None
-
-    exchange_class = exchanges[exchange_name]
-    
-    # Common config
-    config = {
-        "apiKey": api_key,
-        "secret": api_secret,
-        "enableRateLimit": True,
-    }
-
-    # MODE LOGIC:
-    # 1. Agar mode 'Demo' hai aur exchange Binance/Bybit hai -> Sandbox/Testnet enable karo
-    # 2. Agar mode 'Real' hai -> Normal connection
-    # 3. MEXC ke liye sirf 'Real' allow hai
-    
-    if mode == "Demo Trading":
-        if exchange_name in ["bybit", "binance"]:
-            config["sandboxMode"] = True  # CCXT mein ye automatically testnet/sandbox select kar leta hai
+    # EXECUTION BUTTON LOGIC
+    # ==========================================
+    if execute_btn:
+        # 1. Determine Direction & Calculations
+        if auto_trade_mode:
+            direction_tag = (
+                signal["direction"]
+                if "signal" in locals() and signal.get("direction")
+                else "LONG"
+            )
+            if direction_tag == "NEUTRAL":
+                direction_tag = "LONG"
         else:
-            # MEXC ke liye demo/testnet API support limited hai, isliye fallback to paper
-            return None 
+            direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
 
-    exchange = exchange_class(config)
-    return exchange
+        # Fallback agar close_val defined na ho
+        entry_p = close_val if "close_val" in locals() else 0.0
+        if entry_p <= 0:
+            entry_p = 1.0  # Safe fallback
 
+        qty = (order_size_usdt * leverage_val) / entry_p
+
+        # SL and TP Price Calculations
+        if direction_tag == "LONG":
+            stop_loss_price = entry_p * (1 - sl_pct / 100)
+            take_profit_price = entry_p * (1 + tp_pct / 100)
+        else:
+            stop_loss_price = entry_p * (1 + sl_pct / 100)
+            take_profit_price = entry_p * (1 - tp_pct / 100)
+
+        # 2. Live Exchange Connection Helper Function
+        def get_exchange_connection(ex_name, key, secret, mode):
+            exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
+
+            if ex_name not in exchanges:
+                return None
+
+            exchange_class = exchanges[ex_name]
+            
+            config = {
+                "apiKey": key,
+                "secret": secret,
+                "enableRateLimit": True,
+            }
+
+            # MODE LOGIC: Binance & Bybit support Demo/Sandbox, MEXC restricted to Real only
+            if mode == "Demo Trading":
+                if ex_name in ["bybit", "binance"]:
+                    config["sandboxMode"] = True
+                else:
+                    return None
+
+            return exchange_class(config)
+
+        # Connection call example:
+        exchange_client = get_exchange_connection(exchange_name, api_key, api_secret, trading_mode)
+        
+        if trading_mode == "Demo Trading" and exchange_name == "mexc":
+            st.warning("⚠️ MEXC does not support Demo Trading via API. Falling back / Aborting live execution.")
+        elif exchange_client:
+            st.success(f"Successfully connected to {exchange_name.upper()} in {trading_mode} mode!")
+        else:
+            st.error("Failed to connect. Please check your API keys or settings.")
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
   # ==========================================
