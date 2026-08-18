@@ -569,35 +569,44 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         stop_loss_price = entry_p * (1 + sl_pct / 100)
         take_profit_price = entry_p * (1 - tp_pct / 100)
 
-      # 2. Live/Testnet Exchange Connection Helper Function
-      def get_exchange_connection(ex_name, key, secret, mode):
-        exchanges = {
-            "bybit": ccxt.bybit,
-            "binance": ccxt.binanceusdm,  # USDT-M Futures Client for Binance
-            "mexc": ccxt.mexc,
-        }
+      # 2. Live/Demo Exchange Connection Helper Function (Updated)
+        def get_exchange_connection(ex_name, key, secret, mode):
+            exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
 
-        if ex_name not in exchanges:
-          return None
+            if ex_name not in exchanges:
+                return None
 
-        exchange_class = exchanges[ex_name]
+            exchange_class = exchanges[ex_name]
+            
+            config = {
+                "apiKey": key,
+                "secret": secret,
+                "enableRateLimit": True,
+            }
 
-        config = {
-            "apiKey": key,
-            "secret": secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        }
+            if ex_name == "binance":
+                config["options"] = {"defaultType": "future"}
 
-        client = exchange_class(config)
+            client = exchange_class(config)
 
-        if mode in ["Paper Trading", "Demo Trading"]:
-          if ex_name in ["bybit", "binance"]:
-            client.set_sandbox_mode(True)  # Enable Testnet Sandbox
-          else:
-            return None
+            # DEMO / PAPER TRADING CONFIGURATION
+            if mode in ["Paper Trading", "Demo Trading"]:
+                if ex_name == "binance":
+                    # Binance futures testnet deprecation bypass: Enable demo/testnet URLs explicitly if supported, 
+                    # or switch to CCXT's built-in demo urls if available
+                    try:
+                        client.set_sandbox_mode(True)
+                    except Exception:
+                        # Fallback for updated CCXT versions
+                        client.urls['api'] = {
+                            'future': 'https://testnet.binancefuture.com/fapi/v1',
+                        }
+                elif ex_name == "bybit":
+                    client.set_sandbox_mode(True)
+                else:
+                    return None
 
-        return client
+            return client
 
       # Check MEXC Restriction for Demo
       if (
