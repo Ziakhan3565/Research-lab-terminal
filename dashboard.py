@@ -598,8 +598,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
             return exchange_class(config)
 
-        # Connection call example:
-      # ==========================================
+       # ==========================================
     # EXECUTION BUTTON LOGIC
     # ==========================================
     if execute_btn:
@@ -630,7 +629,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             stop_loss_price = entry_p * (1 + sl_pct / 100)
             take_profit_price = entry_p * (1 - tp_pct / 100)
 
-        # 2. Live Exchange Connection Helper Function
+        # 2. Live/Testnet Exchange Connection Helper Function
         def get_exchange_connection(ex_name, key, secret, mode):
             exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
 
@@ -645,14 +644,19 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 "enableRateLimit": True,
             }
 
-            # MODE LOGIC: Binance & Bybit support Demo/Sandbox, MEXC restricted to Real only
-            if mode == "Paper Trading" or mode == "Demo Trading":
+            # Agar Binance ya Bybit hai aur Paper/Demo mode hai toh futures default type set karein aur sandbox mode enable karein
+            if ex_name == "binance":
+                config["options"] = {"defaultType": "future"}
+
+            client = exchange_class(config)
+
+            if mode in ["Paper Trading", "Demo Trading"]:
                 if ex_name in ["bybit", "binance"]:
-                    config["sandboxMode"] = True
+                    client.set_sandbox_mode(True)
                 else:
                     return None
 
-            return exchange_class(config)
+            return client
 
         # Connection call
         exchange_client = get_exchange_connection(exchange_name, api_key, api_secret, trading_mode)
