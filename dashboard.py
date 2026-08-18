@@ -503,158 +503,143 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-  # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
-  # ==========================================
-  st.markdown("---")
-  st.subheader("🚀 Live / Paper Trade Execution Panel")
-
-  # Automated Signal Trade Settings Toggle
-  auto_trade_mode = st.checkbox(
-      "🤖 Enable Fully Automatic Trading on Signal", value=False
-  )
-
-  t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
-
-  with t_col1:
-    trade_action = st.selectbox(
-        "Action",
-        (
-            ["BUY / LONG", "SELL / SHORT"]
-            if "signal" not in locals() or signal.get("direction") != "SHORT"
-            else ["SELL / SHORT", "BUY / LONG"]
-        ),
-    )
-  with t_col2:
-    order_size_usdt = st.number_input(
-        "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
-    )
-  with t_col3:
-    leverage_val = st.slider("Leverage (x)", 1, 50, 10)
-  with t_col4:
-    sl_pct = st.number_input(
-        "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
-    )
-    tp_pct = st.number_input(
-        "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
-    )
-  with t_col5:
-    st.markdown("<br>", unsafe_allow_html=True)
-    execute_btn = st.button(
-        "⚡ Execute Trade Order", use_container_width=True, type="primary"
-    )
-# ==========================================
-    # EXECUTION BUTTON LOGIC (FIXED FOR BINANCE DEMO)
+    # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
     # ==========================================
-    if execute_btn:
-      # 1. Determine Direction & Calculations
-      if auto_trade_mode:
-        direction_tag = (
-            signal["direction"]
-            if "signal" in locals() and signal.get("direction")
-            else "LONG"
+    st.markdown("---")
+    st.subheader("🚀 Live / Paper Trade Execution Panel")
+
+    # Automated Signal Trade Settings Toggle
+    auto_trade_mode = st.checkbox(
+        "🤖 Enable Fully Automatic Trading on Signal", value=False
+    )
+
+    t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
+
+    with t_col1:
+        trade_action = st.selectbox(
+            "Action",
+            (
+                ["BUY / LONG", "SELL / SHORT"]
+                if "signal" not in locals() or signal.get("direction") != "SHORT"
+                else ["SELL / SHORT", "BUY / LONG"]
+            ),
         )
-        if direction_tag == "NEUTRAL":
-          direction_tag = "LONG"
-      else:
-        direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+    with t_col2:
+        order_size_usdt = st.number_input(
+            "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
+        )
+    with t_col3:
+        leverage_val = st.slider("Leverage (x)", 1, 50, 10)
+    with t_col4:
+        sl_pct = st.number_input(
+            "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
+        )
+        tp_pct = st.number_input(
+            "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
+        )
+    with t_col5:
+        st.markdown("<br>", unsafe_allow_html=True)
+        execute_btn = st.button(
+            "⚡ Execute Trade Order", use_container_width=True, type="primary"
+        )
 
-      entry_p = close_val if "close_val" in locals() and close_val > 0 else 1.0
-      qty = (order_size_usdt * leverage_val) / entry_p
 
-      # SL and TP Price Calculations
-      if direction_tag == "LONG":
-        stop_loss_price = entry_p * (1 - sl_pct / 100)
-        take_profit_price = entry_p * (1 + tp_pct / 100)
-      else:
-        stop_loss_price = entry_p * (1 + sl_pct / 100)
-        take_profit_price = entry_p * (1 - tp_pct / 100)
+    # ==========================================
+    # HELPER FUNCTION DEFINITION (Outside execution trigger)
+    # ==========================================
+    def get_exchange_connection(ex_name, key, secret, mode):
+        exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
 
-      # 2. Live/Demo Exchange Connection Helper Function (Updated)
-        def get_exchange_connection(ex_name, key, secret, mode):
-            exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
+        if ex_name not in exchanges:
+            return None
 
-            if ex_name not in exchanges:
+        exchange_class = exchanges[ex_name]
+        
+        config = {
+            "apiKey": key,
+            "secret": secret,
+            "enableRateLimit": True,
+        }
+
+        if ex_name == "binance":
+            config["options"] = {"defaultType": "future"}
+
+        client = exchange_class(config)
+
+        if mode in ["Paper Trading", "Demo Trading"]:
+            if ex_name == "binance":
+                try:
+                    client.set_sandbox_mode(True)
+                except Exception:
+                    client.urls['api'] = {
+                        'future': 'https://testnet.binancefuture.com/fapi/v1',
+                    }
+            elif ex_name == "bybit":
+                client.set_sandbox_mode(True)
+            else:
                 return None
 
-            exchange_class = exchanges[ex_name]
-            
-            config = {
-                "apiKey": key,
-                "secret": secret,
-                "enableRateLimit": True,
-            }
+        return client
 
-            if ex_name == "binance":
-                config["options"] = {"defaultType": "future"}
 
-            client = exchange_class(config)
+    # ==========================================
+    # EXECUTION BUTTON LOGIC
+    # ==========================================
+    if execute_btn:
+        # 1. Determine Direction & Calculations
+        if auto_trade_mode:
+            direction_tag = (
+                signal["direction"]
+                if "signal" in locals() and signal.get("direction")
+                else "LONG"
+            )
+            if direction_tag == "NEUTRAL":
+                direction_tag = "LONG"
+        else:
+            direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
 
-            # DEMO / PAPER TRADING CONFIGURATION
-            if mode in ["Paper Trading", "Demo Trading"]:
-                if ex_name == "binance":
-                    # Binance futures testnet deprecation bypass: Enable demo/testnet URLs explicitly if supported, 
-                    # or switch to CCXT's built-in demo urls if available
-                    try:
-                        client.set_sandbox_mode(True)
-                    except Exception:
-                        # Fallback for updated CCXT versions
-                        client.urls['api'] = {
-                            'future': 'https://testnet.binancefuture.com/fapi/v1',
-                        }
-                elif ex_name == "bybit":
-                    client.set_sandbox_mode(True)
-                else:
-                    return None
+        entry_p = close_val if "close_val" in locals() else 0.0
+        if entry_p <= 0:
+            entry_p = 1.0  
 
-            return client
+        qty = (order_size_usdt * leverage_val) / entry_p
 
-      # Check MEXC Restriction for Demo
-      if (
-          trading_mode in ["Paper Trading", "Demo Trading"]
-      ) and exchange_name == "mexc":
-        st.warning(
-            "⚠️ MEXC does not support Demo/Paper Trading via API. Aborting"
-            " execution."
-        )
-      else:
-        try:
-          exchange_client = get_exchange_connection(
-              exchange_name, api_key, api_secret, trading_mode
-          )
+        if direction_tag == "LONG":
+            stop_loss_price = entry_p * (1 - sl_pct / 100)
+            take_profit_price = entry_p * (1 + tp_pct / 100)
+        else:
+            stop_loss_price = entry_p * (1 + sl_pct / 100)
+            take_profit_price = entry_p * (1 - tp_pct / 100)
 
-          if exchange_client:
-            # Load markets before order placement
-            exchange_client.load_markets()
-
-            symbol_ccxt = selected_symbol.replace(
-                "USDT", "/USDT"
-            )  # e.g., BTC/USDT
-            side = "buy" if direction_tag == "LONG" else "sell"
-
-            # Set leverage
+        # Connection call using defined helper function
+        exchange_client = get_exchange_connection(exchange_name, api_key, api_secret, trading_mode)
+        
+        if (trading_mode in ["Paper Trading", "Demo Trading"]) and exchange_name == "mexc":
+            st.warning("⚠️ MEXC does not support Demo/Paper Trading via API. Aborting execution.")
+        elif exchange_client:
             try:
-              exchange_client.set_leverage(
-                  leverage_val, symbol_ccxt.replace("/", "")
-              )
-            except Exception:
-              pass
+                exchange_client.load_markets()
+                
+                symbol_ccxt = selected_symbol.replace("USDT", "/USDT")
+                side = "buy" if direction_tag == "LONG" else "sell"
+                
+                try:
+                    exchange_client.set_leverage(leverage_val, symbol_ccxt)
+                except Exception:
+                    pass
 
-            # Execute Market Order
-            order = exchange_client.create_market_order(
-                symbol=symbol_ccxt, side=side, amount=qty
-            )
-
-            st.success(
-                f"🚀 Order Successfully Executed on {exchange_name.upper()}"
-                f" ({trading_mode})! Order ID: {order.get('id', 'N/A')}"
-            )
-          else:
-            st.error(
-                "Failed to configure exchange client. Check your settings."
-            )
-
-        except Exception as ex:
-          st.error(f"❌ Order Execution Failed: {str(ex)}")
+                order = exchange_client.create_market_order(
+                    symbol=symbol_ccxt,
+                    side=side,
+                    amount=qty
+                )
+                
+                st.success(f"🚀 Order Successfully Executed on {exchange_name.upper()} ({trading_mode})! ID: {order.get('id', 'N/A')}")
+                
+            except Exception as ex:
+                st.error(f"❌ Order Execution Failed: {str(ex)}")
+        else:
+            st.error("Failed to connect. Please check your API keys or settings.")
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
   # ==========================================
