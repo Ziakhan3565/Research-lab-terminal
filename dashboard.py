@@ -148,7 +148,7 @@ st.markdown(
 )
 
 # ==========================================
-# SIDEBAR CONTROLS & EXCHANGE CONFIG
+# SIDEBAR CONTROLS
 # ==========================================
 COINS_LIST = [
     "BTCUSDT",
@@ -188,22 +188,13 @@ selected_tf_label = st.sidebar.selectbox(
 forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ Exchange API Settings")
-exchange_name = st.sidebar.selectbox(
-    "Select Exchange", ["mexc", "binance", "bybit"], index=0
-)
-api_key = st.sidebar.text_input("API Key", type="password")
-api_secret = st.sidebar.text_input("API Secret", type="password")
-trading_mode = st.sidebar.radio("Execution Mode", ["Paper Trading", "Live/Real"])
-
-st.sidebar.markdown("---")
-st.sidebar.success("🟢 **System Status: Fast Mode Active**")
+st.sidebar.success("🟢 **System Status: Paper & Signal Lab Active**")
 
 api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
 
 # ==========================================
-# DATA FETCHING HELPERS (OPTIMIZED WITH CACHE)
+# DATA FETCHING HELPERS
 # ==========================================
 @st.cache_data(ttl=15)
 def fetch_klines_data(symbol, tf_label, limit=100):
@@ -503,15 +494,10 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-  # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
+  # PAPER TRADE SIMULATION PANEL
   # ==========================================
   st.markdown("---")
-  st.subheader("🚀 Live / Paper Trade Execution Panel")
-
-  # Automated Signal Trade Settings Toggle
-  auto_trade_mode = st.checkbox(
-      "🤖 Enable Fully Automatic Trading on Signal", value=False
-  )
+  st.subheader("🚀 Paper Trade Simulation & Setup Panel")
 
   t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
 
@@ -540,33 +526,13 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
   with t_col5:
     st.markdown("<br>", unsafe_allow_html=True)
     execute_btn = st.button(
-        "⚡ Execute Trade Order", use_container_width=True, type="primary"
+        "⚡ Simulate Paper Trade", use_container_width=True, type="primary"
     )
 
-  # ==========================================
-  # EXECUTION BUTTON LOGIC
-  # ==========================================
   if execute_btn:
-    # 1. Determine Direction & Calculations
-    if auto_trade_mode:
-      direction_tag = (
-          signal["direction"]
-          if "signal" in locals() and signal.get("direction")
-          else "LONG"
-      )
-      if direction_tag == "NEUTRAL":
-        direction_tag = "LONG"
-    else:
-      direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+    direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+    entry_p = close_val if "close_val" in locals() else 1.0
 
-    # Fallback agar close_val defined na ho
-    entry_p = close_val if "close_val" in locals() else 0.0
-    if entry_p <= 0:
-      entry_p = 1.0  # Safe fallback
-
-    qty = (order_size_usdt * leverage_val) / entry_p
-
-    # SL and TP Price Calculations
     if direction_tag == "LONG":
       stop_loss_price = entry_p * (1 - sl_pct / 100)
       take_profit_price = entry_p * (1 + tp_pct / 100)
@@ -574,62 +540,25 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
       stop_loss_price = entry_p * (1 + sl_pct / 100)
       take_profit_price = entry_p * (1 - tp_pct / 100)
 
-    exchange_executed = False
-    execution_msg = ""
-
-    # 2. Live Exchange Execution Check
-    if (
-        "trading_mode" in locals()
-        and trading_mode == "Live/Real"
-        and "api_key" in locals()
-        and api_key
-        and "api_secret" in locals()
-        and api_secret
-    ):
-      try:
-        EXCHANGE_CLASS = getattr(ccxt, exchange_name)
-        ex_inst = EXCHANGE_CLASS({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-        })
-        ex_inst.load_markets()
-        try:
-          ex_inst.set_leverage(leverage_val, selected_symbol)
-        except Exception:
-          pass
-
-        side_str = "buy" if direction_tag == "LONG" else "sell"
-
-        # Placing main market order
-        order_res = ex_inst.create_market_order(selected_symbol, side_str, qty)
-
-        # Parameters for SL and TP
-        params = {
-            "stopLossPrice": round(stop_loss_price, 2),
-            "takeProfitPrice": round(take_profit_price, 2),
-        }
-
-        execution_msg = (
-            f"Live Order Successful! ID: {order_res.get('id', 'N/A')} | SL:"
-            f" ${stop_loss_price:,.2f} | TP: ${take_profit_price:,.2f}"
-        )
-        exchange_executed = True
-      except Exception as e:
-        execution_msg = f"Live Trade Failed: {str(e)} (Fell back to Paper Mode)"
-    else:
-      # Paper Mode Simulation Message
-      execution_msg = (
-          f"Paper Trade Simulated! Dir: {direction_tag} | Entry:"
-          f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
-          f" ${take_profit_price:,.2f}"
-      )
-
-    # Display Status on Streamlit Dashboard
-    if exchange_executed:
-      st.success(execution_msg)
-    else:
-      st.info(execution_msg)
+    sim_trade_entry = {
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "symbol": selected_symbol,
+        "timeframe": selected_tf_label,
+        "direction": direction_tag,
+        "entry_price": round(entry_p, 2),
+        "size_usdt": order_size_usdt,
+        "leverage": leverage_val,
+        "stop_loss": round(stop_loss_price, 2),
+        "take_profit": round(take_profit_price, 2),
+        "outcome": "PENDING",
+    }
+    st.session_state.active_trades_log.insert(0, sim_trade_entry)
+    save_trades_history(st.session_state.active_trades_log)
+    st.success(
+        f"Paper Trade Simulated & Logged! Dir: {direction_tag} | Entry:"
+        f" ${entry_p:,.2f} | SL: ${stop_loss_price:,.2f} | TP:"
+        f" ${take_profit_price:,.2f}"
+    )
 
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
@@ -835,23 +764,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-  # PERFORMANCE & ANALYTICS SECTION + COIN PROFIT/LOSS BREAKDOWN
+  # PERFORMANCE & HISTORICAL LOG SECTION
   # ==========================================
   st.markdown("---")
-  st.subheader(
-      "📊 Performance, Analytics & Coin-wise Profit/Loss Breakdown"
-  )
+  st.subheader("📊 Performance, Analytics & Trade History Log")
 
   if st.session_state.trade_history_log:
     df_log = pd.DataFrame(st.session_state.trade_history_log)
     df_log["dt"] = pd.to_datetime(df_log["timestamp"])
     df_log["date"] = df_log["dt"].dt.date
-
-    now_dt = datetime.datetime.now()
-    today_date = now_dt.date()
-    current_year = now_dt.year
-    current_week = now_dt.isocalendar()[1]
-    current_month = now_dt.month
 
     total_wins = len(df_log[df_log["outcome"] == "WIN"])
     total_losses = len(df_log[df_log["outcome"] == "LOSS"])
@@ -891,168 +812,24 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
           unsafe_allow_html=True,
       )
 
-    st.markdown("### 🏆 Coin-wise Win/Loss & Profit Ranking")
-    coin_perf_list = []
-    for coin in COINS_LIST:
-      coin_df = df_log[df_log["symbol"] == coin]
-      c_wins = len(coin_df[coin_df["outcome"] == "WIN"])
-      c_losses = len(coin_df[coin_df["outcome"] == "LOSS"])
-      c_closed = c_wins + c_losses
-      c_wr = (c_wins / c_closed * 100) if c_closed > 0 else 0.0
-      c_net_pnl = (c_wins * 4) - (c_losses * 2)
-
-      coin_perf_list.append({
-          "Symbol": coin,
-          "Wins": c_wins,
-          "Losses": c_losses,
-          "Win Rate": f"{c_wr:.1f}%",
-          "Est. PnL ($)": f"${c_net_pnl:+d}",
-      })
-
-    df_coin_perf = pd.DataFrame(coin_perf_list)
-    df_coin_perf["sort_val"] = (
-        df_coin_perf["Est. PnL ($)"]
-        .str.replace("$", "", regex=False)
-        .str.replace("+", "", regex=False)
-        .astype(int)
-    )
-    df_coin_perf = df_coin_perf.sort_values(
-        by="sort_val", ascending=False
-    ).drop(columns=["sort_val"])
-
+    st.markdown("### 📜 Automated Signal History Log")
     st.dataframe(
-        df_coin_perf, use_container_width=True, hide_index=True, height=220
+        df_log.drop(columns=["bucket", "dt", "date"], errors="ignore"),
+        use_container_width=True,
+        hide_index=True,
+        height=240,
     )
 
-    df_today = df_log[df_log["date"] == today_date]
-    tot_d = len(df_today)
-    long_d = len(df_today[df_today["direction"] == "LONG"]) if tot_d > 0 else 0
-    short_d = (
-        len(df_today[df_today["direction"] == "SHORT"]) if tot_d > 0 else 0
-    )
-    avg_s_d = df_today["score"].mean() if tot_d > 0 else 0.0
-
-    df_week = df_log[
-        (df_log["dt"].dt.isocalendar().week == current_week)
-        & (df_log["dt"].dt.year == current_year)
-    ]
-    tot_w = len(df_week)
-    long_w = len(df_week[df_week["direction"] == "LONG"]) if tot_w > 0 else 0
-    short_w = (
-        len(df_week[df_week["direction"] == "SHORT"]) if tot_w > 0 else 0
-    )
-    avg_s_w = df_week["score"].mean() if tot_w > 0 else 0.0
-
-    df_month = df_log[
-        (df_log["dt"].dt.month == current_month)
-        & (df_log["dt"].dt.year == current_year)
-    ]
-    tot_m = len(df_month)
-    long_m = len(df_month[df_month["direction"] == "LONG"]) if tot_m > 0 else 0
-    short_m = (
-        len(df_month[df_month["direction"] == "SHORT"]) if tot_m > 0 else 0
-    )
-    avg_s_m = df_month["score"].mean() if tot_m > 0 else 0.0
-
-    tab_d, tab_w, tab_m = st.tabs(
-        ["📅 Daily Overview", "📈 Weekly Overview", "🗓️ Monthly Overview"]
+  if st.session_state.active_trades_log:
+    st.markdown("### 📝 Manual Simulated Trades History")
+    df_trades_log = pd.DataFrame(st.session_state.active_trades_log)
+    st.dataframe(
+        df_trades_log, use_container_width=True, hide_index=True, height=220
     )
 
-    with tab_d:
-      w1, w2, w3, w4 = st.columns(4)
-      with w1:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (Today)</div><div class="metric-value-blue">{tot_d}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with w2:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">LONG /'
-            f' SHORT</div><div style="font-size:18px; font-weight:700;'
-            f' color:#00e676; margin-top:4px;">{long_d} / <span'
-            f' style="color:#ff5252;">{short_d}</span></div></div>',
-            unsafe_allow_html=True,
-        )
-      with w3:
-        sc_col = "#00e676" if avg_s_d >= 0 else "#ff5252"
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (Today)</div><div style="font-size:18px; font-weight:700;'
-            f' color:{sc_col}; margin-top:4px;">{avg_s_d:+.3f}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with w4:
-        neu_d = tot_d - (long_d + short_d)
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
-            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
-            f' margin-top:4px;">{neu_d}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    with tab_w:
-      ww1, ww2, ww3, ww4 = st.columns(4)
-      with ww1:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (Week)</div><div class="metric-value-blue">{tot_w}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with ww2:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">LONG /'
-            f' SHORT</div><div style="font-size:18px; font-weight:700;'
-            f' color:#00e676; margin-top:4px;">{long_w} / <span'
-            f' style="color:#ff5252;">{short_w}</span></div></div>',
-            unsafe_allow_html=True,
-        )
-      with ww3:
-        sc_col_w = "#00e676" if avg_s_w >= 0 else "#ff5252"
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (Week)</div><div style="font-size:18px; font-weight:700;'
-            f' color:{sc_col_w}; margin-top:4px;">{avg_s_w:+.3f}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with ww4:
-        neu_w = tot_w - (long_w + short_w)
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
-            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
-            f' margin-top:4px;">{neu_w}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    with tab_m:
-      mm1, mm2, mm3, mm4 = st.columns(4)
-      with mm1:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (Month)</div><div class="metric-value-blue">{tot_m}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with mm2:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">LONG /'
-            f' SHORT</div><div style="font-size:18px; font-weight:700;'
-            f' color:#00e676; margin-top:4px;">{long_m} / <span'
-            f' style="color:#ff5252;">{short_m}</span></div></div>',
-            unsafe_allow_html=True,
-        )
-      with mm3:
-        sc_col_m = "#00e676" if avg_s_m >= 0 else "#ff5252"
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (Month)</div><div style="font-size:18px; font-weight:700;'
-            f' color:{sc_col_m}; margin-top:4px;">{avg_s_m:+.3f}</div></div>',
-            unsafe_allow_html=True,
-        )
-      with mm4:
-        neu_m = tot_m - (long_m + short_m)
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
-            f' style="font-size:18px; font-weight:700; color:#38bdf8;'
-            f' margin-top:4px;">{neu_m}</div></div>',
-            unsafe_allow_html=True,
-        )
+else:
+  st.warning(
+      "⚠️ Unable to fetch live market data or order book depth. Please verify"
+      " network connection or select a different asset/timeframe."
+  )
+  
