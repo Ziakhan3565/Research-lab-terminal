@@ -9,6 +9,27 @@ import requests
 import streamlit as st
 
 # ==========================================
+# EXCHANGE CONNECTION HELPER
+# ==========================================
+def get_exchange_connection(exchange_name, api_key, api_secret, mode):
+    exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
+
+    if exchange_name not in exchanges:
+        return None
+
+    exchange_class = exchanges[exchange_name]
+    exchange = exchange_class({
+        "apiKey": api_key,
+        "secret": api_secret,
+        "enableRateLimit": True,
+    })
+
+    if mode == "Paper Trading" and exchange_name in ["bybit", "binance"]:
+        exchange.set_sandbox_mode(True)
+
+    return exchange
+
+# ==========================================
 # RESEARCH LAB MODULE & RISK ENGINE FALLBACK
 # ==========================================
 try:
@@ -503,143 +524,90 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     )
 
   # ==========================================
-    # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
-    # ==========================================
-    st.markdown("---")
-    st.subheader("🚀 Live / Paper Trade Execution Panel")
+  # TRADE EXECUTION PANEL & AUTO SL/TP CONFIG
+  # ==========================================
+  st.markdown("---")
+  st.subheader("🚀 Live / Paper Trade Execution Panel")
 
-    # Automated Signal Trade Settings Toggle
-    auto_trade_mode = st.checkbox(
-        "🤖 Enable Fully Automatic Trading on Signal", value=False
+  auto_trade_mode = st.checkbox(
+      "🤖 Enable Fully Automatic Trading on Signal", value=False
+  )
+
+  t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
+
+  with t_col1:
+    trade_action = st.selectbox(
+        "Action",
+        (
+            ["BUY / LONG", "SELL / SHORT"]
+            if "signal" not in locals() or signal.get("direction") != "SHORT"
+            else ["SELL / SHORT", "BUY / LONG"]
+        ),
+    )
+  with t_col2:
+    order_size_usdt = st.number_input(
+        "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
+    )
+  with t_col3:
+    leverage_val = st.slider("Leverage (x)", 1, 50, 10)
+  with t_col4:
+    sl_pct = st.number_input(
+        "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
+    )
+    tp_pct = st.number_input(
+        "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
+    )
+  with t_col5:
+    st.markdown("<br>", unsafe_allow_html=True)
+    execute_btn = st.button(
+        "⚡ Execute Trade Order", use_container_width=True, type="primary"
     )
 
-    t_col1, t_col2, t_col3, t_col4, t_col5 = st.columns([1.2, 1, 1, 1, 1.2])
+  if execute_btn:
+    active_exchange = get_exchange_connection(
+        exchange_name, api_key, api_secret, trading_mode
+    )
 
-    with t_col1:
-        trade_action = st.selectbox(
-            "Action",
-            (
-                ["BUY / LONG", "SELL / SHORT"]
-                if "signal" not in locals() or signal.get("direction") != "SHORT"
-                else ["SELL / SHORT", "BUY / LONG"]
-            ),
+    if auto_trade_mode:
+      direction_tag = (
+          signal["direction"]
+          if "signal" in locals() and signal.get("direction")
+          else "LONG"
+      )
+      if direction_tag == "NEUTRAL":
+        direction_tag = "LONG"
+    else:
+      direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
+
+    entry_p = close_val if "close_val" in locals() else 1.0
+    qty = (order_size_usdt * leverage_val) / entry_p
+
+    try:
+      if trading_mode == "Live/Real" and active_exchange:
+        active_exchange.load_markets()
+        try:
+          active_exchange.set_leverage(leverage_val, selected_symbol)
+        except Exception:
+          pass
+
+        side_str = "buy" if direction_tag == "LONG" else "sell"
+        order_res = active_exchange.create_market_order(
+            selected_symbol, side_str, qty
         )
-    with t_col2:
-        order_size_usdt = st.number_input(
-            "Size (USDT)", min_value=10.0, max_value=10000.0, value=100.0, step=10.0
+        st.success(
+            f"Live Order Successful on {exchange_name.upper()}! ID:"
+            f" {order_res.get('id', 'N/A')}"
         )
-    with t_col3:
-        leverage_val = st.slider("Leverage (x)", 1, 50, 10)
-    with t_col4:
-        sl_pct = st.number_input(
-            "Stop Loss %", min_value=0.1, max_value=10.0, value=1.5, step=0.1
+      else:
+        st.info(
+            f"Paper Trade Simulated on {exchange_name.upper()}! Dir:"
+            f" {direction_tag} | Entry: ${entry_p:,.2f}"
         )
-        tp_pct = st.number_input(
-            "Take Profit %", min_value=0.1, max_value=50.0, value=3.0, step=0.1
-        )
-    with t_col5:
-        st.markdown("<br>", unsafe_allow_html=True)
-        execute_btn = st.button(
-            "⚡ Execute Trade Order", use_container_width=True, type="primary"
-        )
+    except Exception as e:
+      st.error(
+          f"Trade Execution Failed on {exchange_name.upper()}: {str(e)}"
+      )
 
-
-    # ==========================================
-    # HELPER FUNCTION DEFINITION (Outside execution trigger)
-    # ==========================================
-    def get_exchange_connection(ex_name, key, secret, mode):
-        exchanges = {"bybit": ccxt.bybit, "binance": ccxt.binance, "mexc": ccxt.mexc}
-
-        if ex_name not in exchanges:
-            return None
-
-        exchange_class = exchanges[ex_name]
-        
-        config = {
-            "apiKey": key,
-            "secret": secret,
-            "enableRateLimit": True,
-        }
-
-        if ex_name == "binance":
-            config["options"] = {"defaultType": "future"}
-
-        client = exchange_class(config)
-
-        if mode in ["Paper Trading", "Demo Trading"]:
-            if ex_name == "binance":
-                try:
-                    client.set_sandbox_mode(True)
-                except Exception:
-                    client.urls['api'] = {
-                        'future': 'https://testnet.binancefuture.com/fapi/v1',
-                    }
-            elif ex_name == "bybit":
-                client.set_sandbox_mode(True)
-            else:
-                return None
-
-        return client
-
-
-    # ==========================================
-    # EXECUTION BUTTON LOGIC
-    # ==========================================
-    if execute_btn:
-        # 1. Determine Direction & Calculations
-        if auto_trade_mode:
-            direction_tag = (
-                signal["direction"]
-                if "signal" in locals() and signal.get("direction")
-                else "LONG"
-            )
-            if direction_tag == "NEUTRAL":
-                direction_tag = "LONG"
-        else:
-            direction_tag = "LONG" if "BUY" in trade_action else "SHORT"
-
-        entry_p = close_val if "close_val" in locals() else 0.0
-        if entry_p <= 0:
-            entry_p = 1.0  
-
-        qty = (order_size_usdt * leverage_val) / entry_p
-
-        if direction_tag == "LONG":
-            stop_loss_price = entry_p * (1 - sl_pct / 100)
-            take_profit_price = entry_p * (1 + tp_pct / 100)
-        else:
-            stop_loss_price = entry_p * (1 + sl_pct / 100)
-            take_profit_price = entry_p * (1 - tp_pct / 100)
-
-        # Connection call using defined helper function
-        exchange_client = get_exchange_connection(exchange_name, api_key, api_secret, trading_mode)
-        
-        if (trading_mode in ["Paper Trading", "Demo Trading"]) and exchange_name == "mexc":
-            st.warning("⚠️ MEXC does not support Demo/Paper Trading via API. Aborting execution.")
-        elif exchange_client:
-            try:
-                exchange_client.load_markets()
-                
-                symbol_ccxt = selected_symbol.replace("USDT", "/USDT")
-                side = "buy" if direction_tag == "LONG" else "sell"
-                
-                try:
-                    exchange_client.set_leverage(leverage_val, symbol_ccxt)
-                except Exception:
-                    pass
-
-                order = exchange_client.create_market_order(
-                    symbol=symbol_ccxt,
-                    side=side,
-                    amount=qty
-                )
-                
-                st.success(f"🚀 Order Successfully Executed on {exchange_name.upper()} ({trading_mode})! ID: {order.get('id', 'N/A')}")
-                
-            except Exception as ex:
-                st.error(f"❌ Order Execution Failed: {str(ex)}")
-        else:
-            st.error("Failed to connect. Please check your API keys or settings.")
   # ==========================================
   # POWER TRADING & RISK ENGINE METRICS BAR
   # ==========================================
@@ -1005,7 +973,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
       with ww1:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (Week)</div><div class="metric-value-blue">{tot_w}</div></div>',
+            f' (Weekly)</div><div class="metric-value-blue">{tot_w}</div></div>',
             unsafe_allow_html=True,
         )
       with ww2:
@@ -1020,7 +988,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         sc_col_w = "#00e676" if avg_s_w >= 0 else "#ff5252"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (Week)</div><div style="font-size:18px; font-weight:700;'
+            f' (Weekly)</div><div style="font-size:18px; font-weight:700;'
             f' color:{sc_col_w}; margin-top:4px;">{avg_s_w:+.3f}</div></div>',
             unsafe_allow_html=True,
         )
@@ -1034,14 +1002,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         )
 
     with tab_m:
-      mm1, mm2, mm3, mm4 = st.columns(4)
-      with mm1:
+      wm1, wm2, wm3, wm4 = st.columns(4)
+      with wm1:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Total Signals'
-            f' (Month)</div><div class="metric-value-blue">{tot_m}</div></div>',
+            f' (Monthly)</div><div class="metric-value-blue">{tot_m}</div></div>',
             unsafe_allow_html=True,
         )
-      with mm2:
+      with wm2:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">LONG /'
             f' SHORT</div><div style="font-size:18px; font-weight:700;'
@@ -1049,15 +1017,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             f' style="color:#ff5252;">{short_m}</span></div></div>',
             unsafe_allow_html=True,
         )
-      with mm3:
+      with wm3:
         sc_col_m = "#00e676" if avg_s_m >= 0 else "#ff5252"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Avg Score'
-            f' (Month)</div><div style="font-size:18px; font-weight:700;'
+            f' (Monthly)</div><div style="font-size:18px; font-weight:700;'
             f' color:{sc_col_m}; margin-top:4px;">{avg_s_m:+.3f}</div></div>',
             unsafe_allow_html=True,
         )
-      with mm4:
+      with wm4:
         neu_m = tot_m - (long_m + short_m)
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Neutral</div><div'
