@@ -154,7 +154,6 @@ COINS_LIST = [
     "LTCUSDT",
     "BCHUSDT",
     "TRXUSDT",
-    "HYPEUSDT",  # High-momentum scalping coin
     "PEPEUSDT",  # High-volatility memecoin scalper
 ]
 
