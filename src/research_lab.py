@@ -95,6 +95,37 @@ class TenPaperResearchLab:
         return results, final_score, weights
 
 
+# === STABLE SIGNAL MANAGER (HYSTERESIS / NOISE FILTER) ===
+class SignalHysteresisManager:
+    """
+    Yeh class chote-mote changes ko ignore karti hai aur signal ko tab tak 
+    lock rakhi hai jab tak koi high-level trend reversal ya exit threshold cross na ho.
+    """
+    def __init__(self, entry_threshold=0.20, exit_threshold=0.05):
+        self.current_signal = "NEUTRAL"
+        self.entry_threshold = entry_threshold
+        self.exit_threshold = exit_threshold
+
+    def update_signal(self, final_score):
+        if self.current_signal == "NEUTRAL":
+            if final_score >= self.entry_threshold:
+                self.current_signal = "LONG"
+            elif final_score <= -self.entry_threshold:
+                self.current_signal = "SHORT"
+        
+        elif self.current_signal == "LONG":
+            # Agar score exit threshold se niche gir jaye tabhi neutral ya short hoga
+            if final_score <= -self.exit_threshold:
+                self.current_signal = "SHORT" if final_score <= -self.entry_threshold else "NEUTRAL"
+                
+        elif self.current_signal == "SHORT":
+            # Agar score exit threshold se upar chala jaye tabhi neutral ya long hoga
+            if final_score >= self.exit_threshold:
+                self.current_signal = "LONG" if final_score >= self.entry_threshold else "NEUTRAL"
+                
+        return self.current_signal
+
+
 # === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
 class PowerTradingRiskEngine:
     def __init__(self):
