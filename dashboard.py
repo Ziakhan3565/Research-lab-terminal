@@ -8,8 +8,10 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+
 # Har 5 seconds (5000 milliseconds) baad page khud ba khud refresh ho jaye ga
 st_autorefresh(interval=5000, limit=None, key="datarefresh")
+
 # ==========================================
 # RESEARCH LAB MODULE & RISK ENGINE FALLBACK
 # ==========================================
@@ -152,6 +154,8 @@ COINS_LIST = [
     "LTCUSDT",
     "BCHUSDT",
     "TRXUSDT",
+    "GRASSUSDT",
+    "XMRUSDT",
 ]
 
 TIMEFRAME_MAP = {
