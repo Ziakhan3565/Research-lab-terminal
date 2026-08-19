@@ -114,3 +114,4 @@ class PowerTradingRiskEngine:
             'Squeeze_Risk': squeeze_risk,
             'Market_Risk': market_risk
         }
+    
