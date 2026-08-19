@@ -13,19 +13,18 @@ class TenPaperResearchLab:
             default_results = {
                 'OFI': 0.0, 'TSMOM': 0.0, 'MICRO': 0.0, 'QUEUE': 0.0,
                 'AVST': 0.0, 'INVAR': 0.0, 'VPIN': 0.0, 'VRATIO': 0.0,
-                'BURST': 0.0, 'FUND': 0.0
+                'BURST': 0.0, 'FUND': 0.0, 'LOG_PROB': 0.0, 'LOB_TARGET': 0.0
             }
             default_weights = {
-                'OFI': 0.15, 'TSMOM': 0.15, 'MICRO': 0.12, 'QUEUE': 0.10,
+                'OFI': 0.12, 'TSMOM': 0.12, 'MICRO': 0.10, 'QUEUE': 0.08,
                 'AVST': 0.08, 'INVAR': 0.08, 'VPIN': 0.08, 'VRATIO': 0.08,
-                'BURST': 0.08, 'FUND': 0.08
+                'BURST': 0.08, 'FUND': 0.08, 'LOG_PROB': 0.10, 'LOB_TARGET': 0.08
             }
             return default_results, 0.0, default_weights
         
         # 1. OFI (Order Flow Imbalance) - Cont et al. (2014)
         bid_vol = np.sum(bids[:, 1])
         ask_vol = np.sum(asks[:, 1])
-        # Normalized OFI
         results['OFI'] = (bid_vol - ask_vol) / (bid_vol + ask_vol + 1e-8)
 
         # 2. TSMOM (Time-Series Momentum) - Moskowitz et al. (2012)
@@ -74,11 +73,21 @@ class TenPaperResearchLab:
         obi = (bid_vol - ask_vol) / (bid_vol + ask_vol + 1e-8)
         results['FUND'] = np.clip(obi * 1.5, -1, 1)
 
-        # Weighted Ensemble Model
+        # 11. LOG_PROB (Logistic Probability Model)
+        linear_comb = 0.5 + (1.2 * results['OFI']) - (0.8 * results['VPIN'])
+        log_prob = 1.0 / (1.0 + np.exp(-linear_comb))
+        results['LOG_PROB'] = np.clip((log_prob - 0.5) * 2.0, -1, 1)
+
+        # 12. LOB_TARGET (Limit Order Book Target Pressure)
+        delta_p = df['Close'].iloc[-1] - df['Close'].iloc[-2]
+        lob_pressure = (bid_vol - ask_vol) / (bid_vol + ask_vol + 1e-8)
+        results['LOB_TARGET'] = np.clip(lob_pressure * (delta_p / (df['Close'].iloc[-1] + 1e-8) * 100), -1, 1)
+
+        # Weighted Ensemble Model (12 Metrics Total)
         weights = {
-            'OFI': 0.15, 'TSMOM': 0.15, 'MICRO': 0.12, 'QUEUE': 0.10,
+            'OFI': 0.12, 'TSMOM': 0.12, 'MICRO': 0.10, 'QUEUE': 0.08,
             'AVST': 0.08, 'INVAR': 0.08, 'VPIN': 0.08, 'VRATIO': 0.08,
-            'BURST': 0.08, 'FUND': 0.08
+            'BURST': 0.08, 'FUND': 0.08, 'LOG_PROB': 0.10, 'LOB_TARGET': 0.08
         }
         
         final_score = sum(results[paper] * weights[paper] for paper in results)
@@ -114,4 +123,3 @@ class PowerTradingRiskEngine:
             'Squeeze_Risk': squeeze_risk,
             'Market_Risk': market_risk
         }
-    
