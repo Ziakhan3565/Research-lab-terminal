@@ -1,20 +1,22 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # Page Configuration
 st.set_page_config(
-    page_title="Financial Market Learning & Analysis Hub",
+    page_title="Institutional Financial Market Learning & Analysis Hub",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for Professional Look
+# Custom Institutional Dark Styling
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; color: #c9d1d9; }
-    .stMetric { background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
+    .main { background-color: #0b0e14; color: #e6edf3; }
+    .stMetric { background-color: #111622; padding: 18px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    .stTab { font-weight: 600; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -23,7 +25,7 @@ class TenPaperResearchLab:
     def __init__(self, target_vol=0.15):
         self.target_vol = target_vol
 
-    def calculate_all_signals(self, df, bids, asks, current_inventory=0, performance_history=None):
+    def calculate_all_signals(self, df, bids, asks, current_inventory=0):
         results = {}
         
         if len(bids) == 0 or len(asks) == 0 or df.empty or len(df) < 5:
@@ -160,9 +162,6 @@ class SignalHysteresisManager:
 
 # === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
 class PowerTradingRiskEngine:
-    def __init__(self):
-        pass
-
     def calculate_risk_metrics(self, liquidation_volumes, displayed_vol, cancelled_vol, time_exists, obs_window, open_interest, leverage, volatility):
         total_ltz = np.sum(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
         max_ltz = np.max(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
@@ -183,95 +182,146 @@ class PowerTradingRiskEngine:
         }
 
 
-# === STREAMLIT DASHBOARD UI SETUP ===
+# === STREAMLIT DASHBOARD LAYOUT ===
 st.title("⚡ Financial Market Learning & Analysis Hub")
-st.markdown("### Real-Time Microstructure Research & Quantitative Terminal")
+st.markdown("**Institutional Quantitative Order Book & Microstructure Research Terminal**")
 
-# Sidebar Controls & Auto-Refresh Setup
-st.sidebar.header("⚙️ Terminal Controls")
-symbol = st.sidebar.selectbox("Trading Pair", ["BTC/USDT", "SOL/USDT", "HYPE/USDT", "ETH/USDT", "TAO/USDT"])
-selected_tf = st.sidebar.selectbox("Select Timeframe", ["1m", "15m", "1h", "4h"])
+# Sidebar Configuration Controls
+st.sidebar.header("⚙️ Terminal Engine Setup")
+exchange = st.sidebar.selectbox("Exchange Source", ["Bybit Linear", "MEXC Futures", "Binance Futures"])
+symbol = st.sidebar.selectbox("Trading Pair", ["BTC/USDT", "SOL/USDT", "HYPE/USDT", "ETH/USDT", "TAO/USDT", "GOLD(XAUT)USDT", "FARTCOIN/USDT"])
+selected_tf = st.sidebar.selectbox("Analysis Timeframe", ["1m", "5m", "15m", "1h", "4h"])
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🔄 Auto-Refresh Configuration")
-enable_auto_refresh = st.sidebar.checkbox("Enable Live Auto-Refresh", value=True)
-refresh_interval = st.sidebar.slider("Refresh Interval (Seconds)", min_value=2, max_value=30, value=5)
+st.sidebar.subheader("🔄 Auto-Refresh & Stream")
+enable_auto_refresh = st.sidebar.checkbox("Enable Live Engine Feed", value=True)
+refresh_interval = st.sidebar.slider("Polling Interval (Sec)", min_value=1, max_value=20, value=3)
 
 if enable_auto_refresh:
-    st_autorefresh(interval=refresh_interval * 1000, key="datarefresh")
+    st_autorefresh(interval=refresh_interval * 1000, key="datarefresh_terminal")
 
-# Mode Selection
-manager_mode = "1m" if selected_tf == "1m" else "15m"
+# Mode mapping for Hysteresis Manager
+manager_mode = "1m" if selected_tf in ["1m", "5m"] else "15m"
 
 if 'signal_manager' not in st.session_state or st.session_state.get('current_mode') != manager_mode:
     st.session_state.signal_manager = SignalHysteresisManager(mode=manager_mode)
     st.session_state.current_mode = manager_mode
 
-# Dynamic/Simulated Live Market Data Feed
-np.random.seed(int(pd.Timestamp.now().timestamp()) % 1000)
-dates = pd.date_range(end=pd.Timestamp.now(), periods=60, freq='T' if selected_tf == '1m' else '15T')
-base_price = 65000.0 if "BTC" in symbol else 180.0
+if 'trade_history' not in st.session_state:
+    st.session_state.trade_history = []
+
+# Generate Dynamic Simulation Data
+np.random.seed(int(datetime.now().timestamp()) % 9999)
+periods_count = 100
+dates = pd.date_range(end=datetime.now(), periods=periods_count, freq='T' if "m" in selected_tf else 'H')
+base_p = 68000.0 if "BTC" in symbol else (220.0 if "SOL" in symbol else 10.0)
+
 df_mock = pd.DataFrame({
-    'Close': base_price + np.cumsum(np.random.randn(60) * (base_price * 0.0005)),
-    'Volume': np.random.randint(500, 5000, 60)
+    'Close': base_p + np.cumsum(np.random.randn(periods_count) * (base_p * 0.0008)),
+    'Volume': np.random.randint(1000, 10000, periods_count)
 }, index=dates)
 
-spread = base_price * 0.0001
-bids_mock = np.array([[base_price - spread, np.random.uniform(1, 5)], [base_price - spread*2, np.random.uniform(2, 8)]])
-asks_mock = np.array([[base_price + spread, np.random.uniform(1, 5)], [base_price + spread*2, np.random.uniform(2, 8)]])
+spread = base_p * 0.0002
+bids_mock = np.array([
+    [base_p - spread, np.random.uniform(2, 10)],
+    [base_p - spread*2, np.random.uniform(5, 20)],
+    [base_p - spread*3, np.random.uniform(10, 40)]
+])
+asks_mock = np.array([
+    [base_p + spread, np.random.uniform(2, 10)],
+    [base_p + spread*2, np.random.uniform(5, 20)],
+    [base_p + spread*3, np.random.uniform(10, 40)]
+])
 
-# Run Computations
+# Run Research Lab Calculations
 lab = TenPaperResearchLab()
 results, final_score, weights = lab.calculate_all_signals(df_mock, bids_mock, asks_mock)
 active_signal = st.session_state.signal_manager.update_signal(final_score)
 
+# Risk Engine Computation
 risk_engine = PowerTradingRiskEngine()
 risk_metrics = risk_engine.calculate_risk_metrics(
-    liquidation_volumes=np.array([1200, 4500, 300]),
-    displayed_vol=50000.0,
-    cancelled_vol=12000.0,
-    time_exists=15.0,
+    liquidation_volumes=np.array([2500, 8900, 1200, 400]),
+    displayed_vol=150000.0,
+    cancelled_vol=45000.0,
+    time_exists=12.0,
     obs_window=60.0,
-    open_interest=1500000.0,
-    leverage=20.0,
-    volatility=0.02
+    open_interest=5400000.0,
+    leverage=25.0,
+    volatility=df_mock['Close'].pct_change().std()
 )
 
-# Top Dashboard Metrics Display
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Asset Pair", symbol)
-col2.metric("Timeframe Mode", f"{selected_tf} ({manager_mode.upper()})")
-col3.metric("Ensemble Score", f"{final_score:.4f}")
-col4.metric("Stable Signal Status", active_signal, delta="Live Sync Active" if enable_auto_refresh else "Paused")
+# Top Key Performance Indicators (KPIs)
+col1, col2, col3, col4, col5 = st.columns(5)
+col1.metric("Exchange & Asset", f"{exchange.split()[0]} | {symbol}")
+col2.metric("Timeframe Mode", f"{selected_tf.upper()} ({manager_mode.upper()})")
+col3.metric("Ensemble Score", f"{final_score:.4f}", delta=f"{final_score*100:.1f}%")
+col4.metric("Active Signal Status", active_signal, delta="Strict Gate Active" if manager_mode == "15m" else "Scalping Fast")
+col5.metric("Market Risk Level", f"{risk_metrics['Market_Risk']:.1f}", delta="Warning" if risk_metrics['Market_Risk'] > 45 else "Optimal", delta_color="inverse")
 
 st.markdown("---")
 
-# Main Dashboard Layout tabs
-tab1, tab2, tab3 = st.tabs(["📊 12-Paper Metrics", "🛡️ Risk & Liquidation Terminal", "📈 Price & Order Flow"])
+# Main Multi-Tab Interface
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 12-Paper Microstructure Grid", 
+    "🛡️ Liquidation & Manipulation Guard", 
+    "📈 Live Order Flow & Price Action", 
+    "📜 Signal Log & Backtest Tracker"
+])
 
 with tab1:
-    st.subheader("Quantitative Metrics Breakdown (12 Academic Papers)")
-    
-    # Create columns for nice layout of metrics
-    metrics_cols = st.columns(3)
+    st.subheader("Deep Quantitative Metrics Breakdown (Academic Models)")
+    m_cols = st.columns(4)
     idx = 0
-    for metric_name, val in results.items():
-        with metrics_cols[idx % 3]:
-            st.metric(label=f"{metric_name} Score", value=f"{val:.3f}", delta=f"Weight: {weights.get(metric_name, 0)}")
+    for paper, score in results.items():
+        with m_cols[idx % 4]:
+            st.metric(label=f"{paper} Model", value=f"{score:.3f}", delta=f"Weight: {weights.get(paper, 0)}")
         idx += 1
         
-    st.markdown("### Metrics Heatmap Table")
-    df_results = pd.DataFrame(list(results.items()), columns=['Paper/Metric', 'Score'])
-    st.dataframe(df_results, use_container_width=True)
+    st.markdown("### Complete Matrix Table")
+    df_matrix = pd.DataFrame(list(results.items()), columns=['Metric / Paper Reference', 'Calculated Alpha Score'])
+    df_matrix['Assigned Weight'] = df_matrix['Metric / Paper Reference'].map(weights)
+    st.dataframe(df_matrix, use_container_width=True, hide_index=True)
 
 with tab2:
-    st.subheader("Power Trading & Manipulation Risk Engine")
-    r_col1, r_col2, r_col3, r_col4 = st.columns(4)
-    r_col1.metric("LTZ Score", f"{risk_metrics['LTZ_Score']:.2f}%")
-    r_col2.metric("Spoofing Risk", f"{risk_metrics['Spoof_Score']:.4f}")
-    r_col3.metric("Squeeze Risk", f"{risk_metrics['Squeeze_Risk']:.2f}")
-    r_col4.metric("Composite Risk Index", f"{risk_metrics['Market_Risk']:.2f}", delta="Caution" if risk_metrics['Market_Risk'] > 50 else "Normal")
+    st.subheader("Power Trading & Liquidation Risk Analysis Engine")
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("LTZ (Liquidation Trace)", f"{risk_metrics['LTZ_Score']:.2f}%")
+    r2.metric("Spoofing Pressure", f"{risk_metrics['Spoof_Score']:.4f}")
+    r3.metric("Short/Long Squeeze Risk", f"{risk_metrics['Squeeze_Risk']:.2f}")
+    r4.metric("Composite Risk Index", f"{risk_metrics['Market_Risk']:.2f}")
+    
+    st.info("💡 **Note:** High Spoofing or Squeeze Risk automatically clamps execution triggers to protect capital from predatory market maker sweeps.")
 
 with tab3:
-    st.subheader("Live Price Action & Trend Chart")
-    st.line_chart(df_mock['Close'])
+    st.subheader(f"Live Price Action & Trend Chart for {symbol}")
+    st.line_chart(df_mock['Close'], height=350)
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("### Top 3 Bids (Buy Side)")
+        st.dataframe(pd.DataFrame(bids_mock, columns=['Price', 'Size']), hide_index=True, use_container_width=True)
+    with col_b:
+        st.markdown("### Top 3 Asks (Sell Side)")
+        st.dataframe(pd.DataFrame(asks_mock, columns=['Price', 'Size']), hide_index=True, use_container_width=True)
+
+with tab4:
+    st.subheader("Automated Execution Signal Log")
+    if active_signal != "NEUTRAL":
+        new_entry = {
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Symbol": symbol,
+            "Timeframe": selected_tf,
+            "Signal": active_signal,
+            "Score": round(final_score, 4)
+        }
+        # Avoid duplicate consecutive logs
+        if not st.session_state.trade_history or st.session_state.trade_history[-1]['Signal'] != active_signal:
+            st.session_state.trade_history.append(new_entry)
+            
+    if st.session_state.trade_history:
+        df_history = pd.DataFrame(st.session_state.trade_history)
+        st.dataframe(df_history, use_container_width=True, hide_index=True)
+    else:
+        st.write("Waiting for active directional signal trigger...")
+        
