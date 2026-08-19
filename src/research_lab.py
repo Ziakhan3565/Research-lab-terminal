@@ -95,48 +95,62 @@ class TenPaperResearchLab:
         return results, final_score, weights
 
 
-# === STABLE SIGNAL HYSTERESIS WITH 60% OPPOSITE CONVICTION GATE ===
+# === ADAPTIVE SIGNAL MANAGER (1m = SCALPING / 15m = 60% CONVICTION GATE) ===
 class SignalHysteresisManager:
-    def __init__(self, entry_threshold=0.25, opposite_flip_threshold=0.60, window=15):
+    def __init__(self, mode="15m"):
+        self.mode = mode
         self.current_signal = "NEUTRAL"
-        self.entry_threshold = entry_threshold         # Normal entry threshold (e.g., 0.25)
-        self.opposite_flip_threshold = opposite_flip_threshold # Opposite side requirement (60% i.e. 0.60)
         self.score_history = []
-        self.window = window
+        
+        # Configurations based on timeframe mode
+        if self.mode == "1m":
+            # Fast raw scalping mode (no heavy restrictions)
+            self.entry_threshold = 0.15
+            self.window = 2  # Almost real-time reactions
+        else:
+            # Intraday 15m mode (with 60% opposite conviction gate & smoothing)
+            self.entry_threshold = 0.25
+            self.opposite_flip_threshold = 0.60  # 60% threshold for direct flip
+            self.window = 12
 
     def update_signal(self, final_score):
-        # Moving average smoothing to remove minor ticks
+        # Smoothing window
         self.score_history.append(final_score)
         if len(self.score_history) > self.window:
             self.score_history.pop(0)
         
         smoothed_score = np.mean(self.score_history)
 
-        # State Machine with Strict Opposite Gate
-        if self.current_signal == "NEUTRAL":
+        # 1-MINUTE SCALPING MODE (Fast, raw flow, instant response)
+        if self.mode == "1m":
             if smoothed_score >= self.entry_threshold:
-                self.current_signal = "LONG"
+                return "LONG"
             elif smoothed_score <= -self.entry_threshold:
-                self.current_signal = "SHORT"
-                
-        elif self.current_signal == "LONG":
-            # Agar hum LONG mein hain, toh SHORT tab tak nahi ayega 
-            # jab tak smoothed_score -0.60 (60% conviction) ko cross na kar le.
-            # Is se pehle agar score gira bhi, toh wo sirf NEUTRAL hoga, direct SHORT nahi.
-            if smoothed_score <= -self.opposite_flip_threshold:
-                self.current_signal = "SHORT"
-            elif smoothed_score < 0.02:  # Normal exit to neutral
-                self.current_signal = "NEUTRAL"
-                
-        elif self.current_signal == "SHORT":
-            # Agar hum SHORT mein hain, toh LONG tab tak nahi ayega 
-            # jab tak smoothed_score +0.60 (60% conviction) ko cross na kar le.
-            if smoothed_score >= self.opposite_flip_threshold:
-                self.current_signal = "LONG"
-            elif smoothed_score > -0.02: # Normal exit to neutral
-                self.current_signal = "NEUTRAL"
-                
-        return self.current_signal
+                return "SHORT"
+            else:
+                return "NEUTRAL"
+
+        # 15-MINUTE INTRADAY MODE (With 60% opposite conviction gate)
+        else:
+            if self.current_signal == "NEUTRAL":
+                if smoothed_score >= self.entry_threshold:
+                    self.current_signal = "LONG"
+                elif smoothed_score <= -self.entry_threshold:
+                    self.current_signal = "SHORT"
+            
+            elif self.current_signal == "LONG":
+                if smoothed_score <= -self.opposite_flip_threshold:
+                    self.current_signal = "SHORT"  # Direct flip only if opposite conviction > 60%
+                elif smoothed_score < 0.02:
+                    self.current_signal = "NEUTRAL"
+                    
+            elif self.current_signal == "SHORT":
+                if smoothed_score >= self.opposite_flip_threshold:
+                    self.current_signal = "LONG"   # Direct flip only if opposite conviction > 60%
+                elif smoothed_score > -0.02:
+                    self.current_signal = "NEUTRAL"
+                    
+            return self.current_signal
 
 
 # === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
@@ -145,20 +159,15 @@ class PowerTradingRiskEngine:
         pass
 
     def calculate_risk_metrics(self, liquidation_volumes, displayed_vol, cancelled_vol, time_exists, obs_window, open_interest, leverage, volatility):
-        # 1. LTZ (Liquidation Trace Zone Score)
         total_ltz = np.sum(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
         max_ltz = np.max(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
         ltz_score = (max_ltz / (total_ltz + 1e-8)) * 100
 
-        # 2. Spoof Score (Order Book Manipulation Detection)
         spoof_ratio = cancelled_vol / (displayed_vol + 1e-8)
         persistence = min(max(time_exists / (obs_window + 1e-8), 0), 1)
         spoof_score = spoof_ratio * (1 - persistence)
 
-        # 3. Squeeze Risk
         squeeze_risk = total_ltz * open_interest * leverage * volatility
-
-        # 4. Composite Market Risk
         market_risk = ltz_score + spoof_score + squeeze_risk
         
         return {
