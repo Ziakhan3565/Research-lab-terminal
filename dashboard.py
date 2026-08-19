@@ -195,7 +195,11 @@ if 'trade_history' not in st.session_state:
 
 np.random.seed(int(datetime.now().timestamp()) % 9999)
 periods_count = 100
-dates = pd.date_range(end=datetime.now(), periods=periods_count, freq='T' if "m" in selected_tf else 'H')
+
+# Fixed Pandas Frequency Compatibility ('min' for minutes, 'h' for hours)
+freq_str = 'min' if "m" in selected_tf else 'h'
+dates = pd.date_range(end=datetime.now(), periods=periods_count, freq=freq_str)
+
 base_p = 68000.0 if "BTC" in symbol else (220.0 if "SOL" in symbol else 10.0)
 
 df_mock = pd.DataFrame({
@@ -284,7 +288,7 @@ with tab4:
     else:
         st.write("Waiting for active directional signal trigger...")
 
-# Native Streamlit Auto-Refresh Trigger (No external package needed)
+# Native Streamlit Auto-Refresh Trigger
 if enable_auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
