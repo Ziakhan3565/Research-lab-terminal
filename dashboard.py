@@ -151,7 +151,6 @@ COINS_LIST = [
     "NEARUSDT",
     "LTCUSDT",
     "BCHUSDT",
-    "GRASSUSDT",
     "TRXUSDT",
 ]
 
