@@ -154,8 +154,8 @@ COINS_LIST = [
     "LTCUSDT",
     "BCHUSDT",
     "TRXUSDT",
-    "GRASSUSDT",
-    "XMRUSDT",
+    "HYPEUSDT",  # High-momentum scalping coin
+    "PEPEUSDT",  # High-volatility memecoin scalper
 ]
 
 TIMEFRAME_MAP = {
@@ -346,7 +346,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         f"""
     <div class="top-status-bar">
         🔵 <b>Viewing: [{selected_symbol}]</b> | Mode/TF: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
-        Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
+        Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.6f}</span> &nbsp;|&nbsp; 
         ⏳ Reset In: <b>{mins_rem}m {secs_rem}s</b>
     </div>
     """,
@@ -382,7 +382,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">🟠'
             f" {selected_symbol}</div><div"
-            f' class="metric-value-green">${close_val:,.2f}</div><div'
+            f' class="metric-value-green">${close_val:,.6f}</div><div'
             f' style="font-size:11px; color:#00e676;">+{pct_change:.2f}%'
             "</div></div>",
             unsafe_allow_html=True,
@@ -402,7 +402,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             unsafe_allow_html=True,
         )
     with m4:
-        beam_val_str = f"${signal['beam']:,.2f}"
+        beam_val_str = f"${signal['beam']:,.6f}"
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Target'
             f' (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>',
@@ -473,13 +473,13 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             y=signal["beam"],
             line_dash="dash",
             line_color="#ff5252",
-            annotation_text=f"BEAM: ${signal['beam']:,.2f}",
+            annotation_text=f"BEAM: ${signal['beam']:,.6f}",
         )
         fig.add_hline(
             y=signal["base"],
             line_dash="dash",
             line_color="#ff5252",
-            annotation_text=f"BASE: ${signal['base']:,.2f}",
+            annotation_text=f"BASE: ${signal['base']:,.6f}",
         )
         fig.update_layout(
             template="plotly_dark",
