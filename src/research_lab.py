@@ -95,64 +95,48 @@ class TenPaperResearchLab:
         return results, final_score, weights
 
 
-# === ULTRA-STABLE SIGNAL HYSTERESIS MANAGER (NOISE & FLUCTUATION FILTER) ===
+# === STABLE SIGNAL HYSTERESIS WITH 60% OPPOSITE CONVICTION GATE ===
 class SignalHysteresisManager:
-    def __init__(self, entry_threshold=0.32, exit_threshold=0.03, window=25):
+    def __init__(self, entry_threshold=0.25, opposite_flip_threshold=0.60, window=15):
         self.current_signal = "NEUTRAL"
-        self.entry_threshold = entry_threshold
-        self.exit_threshold = exit_threshold
+        self.entry_threshold = entry_threshold         # Normal entry threshold (e.g., 0.25)
+        self.opposite_flip_threshold = opposite_flip_threshold # Opposite side requirement (60% i.e. 0.60)
         self.score_history = []
         self.window = window
 
     def update_signal(self, final_score):
-        # Smooth score using larger moving average window to filter noise
+        # Moving average smoothing to remove minor ticks
         self.score_history.append(final_score)
         if len(self.score_history) > self.window:
             self.score_history.pop(0)
         
         smoothed_score = np.mean(self.score_history)
 
-        # Strict Hysteresis state machine to prevent rapid flipping
+        # State Machine with Strict Opposite Gate
         if self.current_signal == "NEUTRAL":
             if smoothed_score >= self.entry_threshold:
                 self.current_signal = "LONG"
             elif smoothed_score <= -self.entry_threshold:
                 self.current_signal = "SHORT"
-        
+                
         elif self.current_signal == "LONG":
-            if smoothed_score < self.exit_threshold:
+            # Agar hum LONG mein hain, toh SHORT tab tak nahi ayega 
+            # jab tak smoothed_score -0.60 (60% conviction) ko cross na kar le.
+            # Is se pehle agar score gira bhi, toh wo sirf NEUTRAL hoga, direct SHORT nahi.
+            if smoothed_score <= -self.opposite_flip_threshold:
+                self.current_signal = "SHORT"
+            elif smoothed_score < 0.02:  # Normal exit to neutral
                 self.current_signal = "NEUTRAL"
                 
         elif self.current_signal == "SHORT":
-            if smoothed_score > -self.exit_threshold:
+            # Agar hum SHORT mein hain, toh LONG tab tak nahi ayega 
+            # jab tak smoothed_score +0.60 (60% conviction) ko cross na kar le.
+            if smoothed_score >= self.opposite_flip_threshold:
+                self.current_signal = "LONG"
+            elif smoothed_score > -0.02: # Normal exit to neutral
                 self.current_signal = "NEUTRAL"
                 
         return self.current_signal
-
-
-# === MULTI-TIMEFRAME CONFIRMATION ENGINE (AND LOGIC) ===
-class MultiTimeframeFilter:
-    """
-    Yeh class 15m, 1h, aur 4h ke signals ko combine karti hai taake 
-    chote time-frame ki fluctuation barhi trades ko disturb na kare.
-    """
-    def __init__(self):
-        pass
-
-    def get_confirmed_signal(self, sig_15m, sig_1h, sig_4h):
-        # Agar 15m aur 1h dono ka signal match kare tabhi final execute ho
-        if sig_15m == "LONG" and sig_1h == "LONG":
-            return "STRONG LONG"
-        elif sig_15m == "SHORT" and sig_1h == "SHORT":
-            return "STRONG SHORT"
-        
-        # Agar sirf 15m match kare lekin higher TF (1h/4h) neutral ya against ho
-        elif sig_15m == "LONG":
-            return "WEAK LONG (Caution)"
-        elif sig_15m == "SHORT":
-            return "WEAK SHORT (Caution)"
-        
-        return "NEUTRAL"
 
 
 # === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
