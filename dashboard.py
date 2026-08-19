@@ -181,7 +181,19 @@ api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 # ==========================================
 @st.cache_data(ttl=15)
 def fetch_klines_data(symbol, tf_label_key, limit=100):
-    binance_tf = "1m" if "1m" in tf_label_key else ("15m" if "15m" in tf_label_key else ("30m" if "30m" in tf_label_key else ("1h" if "1h" in tf_label_key else "4h")))
+    binance_tf = (
+        "1m"
+        if "1m" in tf_label_key
+        else (
+            "15m"
+            if "15m" in tf_label_key
+            else (
+                "30m"
+                if "30m" in tf_label_key
+                else ("1h" if "1h" in tf_label_key else "4h")
+            )
+        )
+    )
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
     try:
         res = requests.get(url, timeout=3).json()
@@ -366,21 +378,24 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if "1m" in selected_tf_label:
         st.markdown("### ⚡ Section 1: High-Frequency 1-Minute Scalping Engine")
         st.info(
-            "Running micro-structure tracking tailored for rapid 1-minute execution windows."
+            "Running micro-structure tracking tailored for rapid 1-minute"
+            " execution windows."
         )
     elif "15m" in selected_tf_label or "30m" in selected_tf_label:
         st.markdown(
             "### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis"
         )
         st.info(
-            "Optimized medium timeframe sweet-spot balancing momentum and structural liquidity shifts."
+            "Optimized medium timeframe sweet-spot balancing momentum and"
+            " structural liquidity shifts."
         )
     else:
         st.markdown(
             "### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab"
         )
         st.info(
-            "Macro directional alignment and multi-hour execution framework for sustained intraday swings."
+            "Macro directional alignment and multi-hour execution framework for"
+            " sustained intraday swings."
         )
 
     # Metrics Display Bar
@@ -552,12 +567,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with c_p1:
         log_val = signal["paper_results"].get("LOG_PROB", 0.0)
         st.markdown(
-            f"""
+            r"""
         <div class="metric-card">
             <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOG_PROB (Logistic Probability Model)</div>
-            <div style="font-size:16px; font-weight:600; color:{'#00e676' if log_val >= 0 else '#ff5252'};">Value: {log_val:+.3f}</div>
+            <div style="font-size:16px; font-weight:600; color:"""
+            + ("#00e676" if log_val >= 0 else "#ff5252")
+            + f"""">Value: {log_val:+.3f}</div>
             <div class="formula-box">
-                <b>Formula:</b> $P(Y=1 | X) = \\frac{1}{1 + e^{-(\\beta_0 + \\sum \\beta_i X_i)}}$<br>
+                <b>Formula:</b> $P(Y=1 | X) = \\frac{{1}}{{1 + e^{-(\\beta_0 + \\sum \\beta_i X_i)}}}$<br>
                 <i>Calculates directional likelihood using order flow features.</i>
             </div>
         </div>
@@ -568,13 +585,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with c_p2:
         lob_val = signal["paper_results"].get("LOB_TARGET", 0.0)
         st.markdown(
-            f"""
+            r"""
         <div class="metric-card">
             <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOB_TARGET (Limit Order Book Target)</div>
-            <div style="font-size:16px; font-weight:600; color:{'#00e676' if lob_val >= 0 else '#ff5252'};">Value: {lob_val:+.3f}</div>
+            <div style="font-size:16px; font-weight:600; color:"""
+            + ("#00e676" if lob_val >= 0 else "#ff5252")
+            + f"""">Value: {lob_val:+.3f}</div>
             <div class="formula-box">
-                <b>Formula:</b> $LOB_{target} = \\frac{\\sum V_{bid} - \\sum V_{ask}}{\\sum V_{bid} + \\sum V_{ask}} \\times \\Delta P$<br>
-                <i>Predicts short-term price pressure based on depth shifts.</i>
+                <b>Formula:</b> $LOB_{{target}} = \\frac{{\\sum V_{{bid}} - \\sum V_{{ask}}}}{{\\sum V_{{bid}} + \\sum V_{{ask}}}} \\times \\Delta P$<br>
+                <i>Predicts short-term pressure based on depth shifts.</i>
             </div>
         </div>
         """,
