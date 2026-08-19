@@ -239,30 +239,6 @@ def fetch_order_book_depth(symbol, depth_limit=10):
         return np.array([]), np.array([])
 
 
-# ==========================================
-# AUTO OUTCOME CHECKER
-# ==========================================
-def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
-    tp_distance = sl_distance * 2
-    if direction == "LONG":
-        tp_price = entry_price + tp_distance
-        sl_price = entry_price - sl_distance
-        for _, row in df_candles.iterrows():
-            if row["Low"] <= sl_price:
-                return "LOSS"
-            if row["High"] >= tp_price:
-                return "WIN"
-    elif direction == "SHORT":
-        tp_price = entry_price - tp_distance
-        sl_price = entry_price + sl_distance
-        for _, row in df_candles.iterrows():
-            if row["High"] >= sl_price:
-                return "LOSS"
-            if row["Low"] <= tp_price:
-                return "WIN"
-    return "PENDING"
-
-
 df = fetch_klines_data(selected_symbol, selected_tf_label)
 bids, asks = fetch_order_book_depth(selected_symbol)
 
@@ -378,24 +354,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if "1m" in selected_tf_label:
         st.markdown("### ⚡ Section 1: High-Frequency 1-Minute Scalping Engine")
         st.info(
-            "Running micro-structure tracking tailored for rapid 1-minute"
-            " execution windows."
+            "Running micro-structure tracking tailored for rapid 1-minute execution windows."
         )
     elif "15m" in selected_tf_label or "30m" in selected_tf_label:
-        st.markdown(
-            "### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis"
-        )
+        st.markdown("### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis")
         st.info(
-            "Optimized medium timeframe sweet-spot balancing momentum and"
-            " structural liquidity shifts."
+            "Optimized medium timeframe sweet-spot balancing momentum and structural liquidity shifts."
         )
     else:
-        st.markdown(
-            "### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab"
-        )
+        st.markdown("### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab")
         st.info(
-            "Macro directional alignment and multi-hour execution framework for"
-            " sustained intraday swings."
+            "Macro directional alignment and multi-hour execution framework for sustained intraday swings."
         )
 
     # Metrics Display Bar
