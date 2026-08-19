@@ -239,30 +239,6 @@ def fetch_order_book_depth(symbol, depth_limit=10):
         return np.array([]), np.array([])
 
 
-# ==========================================
-# AUTO OUTCOME CHECKER
-# ==========================================
-def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
-    tp_distance = sl_distance * 2
-    if direction == "LONG":
-        tp_price = entry_price + tp_distance
-        sl_price = entry_price - sl_distance
-        for _, row in df_candles.iterrows():
-            if row["Low"] <= sl_price:
-                return "LOSS"
-            if row["High"] >= tp_price:
-                return "WIN"
-    elif direction == "SHORT":
-        tp_price = entry_price - tp_distance
-        sl_price = entry_price + sl_distance
-        for _, row in df_candles.iterrows():
-            if row["High"] >= sl_price:
-                return "LOSS"
-            if row["Low"] <= tp_price:
-                return "WIN"
-    return "PENDING"
-
-
 df = fetch_klines_data(selected_symbol, selected_tf_label)
 bids, asks = fetch_order_book_depth(selected_symbol)
 
@@ -378,24 +354,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if "1m" in selected_tf_label:
         st.markdown("### ⚡ Section 1: High-Frequency 1-Minute Scalping Engine")
         st.info(
-            "Running micro-structure tracking tailored for rapid 1-minute"
-            " execution windows."
+            "Running micro-structure tracking tailored for rapid 1-minute execution windows."
         )
     elif "15m" in selected_tf_label or "30m" in selected_tf_label:
-        st.markdown(
-            "### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis"
-        )
+        st.markdown("### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis")
         st.info(
-            "Optimized medium timeframe sweet-spot balancing momentum and"
-            " structural liquidity shifts."
+            "Optimized medium timeframe sweet-spot balancing momentum and structural liquidity shifts."
         )
     else:
-        st.markdown(
-            "### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab"
-        )
+        st.markdown("### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab")
         st.info(
-            "Macro directional alignment and multi-hour execution framework for"
-            " sustained intraday swings."
+            "Macro directional alignment and multi-hour execution framework for sustained intraday swings."
         )
 
     # Metrics Display Bar
@@ -406,46 +375,34 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     with m1:
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">🟠'
-            f" {selected_symbol}</div><div"
-            f' class="metric-value-green">${close_val:,.2f}</div><div'
-            f' style="font-size:11px; color:#00e676;">+{pct_change:.2f}%'
-            "</div></div>",
+            f'<div class="metric-card"><div class="metric-label">🟠 {selected_symbol}</div><div class="metric-value-green">${close_val:,.2f}</div><div style="font-size:11px; color:#00e676;">+{pct_change:.2f}%</div></div>',
             unsafe_allow_html=True,
         )
     with m2:
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Net'
-            f' Score</div><div'
-            f' class="metric-value-red">{signal["score"]:+.3f}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Net Score</div><div class="metric-value-red">{signal["score"]:+.3f}</div></div>',
             unsafe_allow_html=True,
         )
     with m3:
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Signal</div><div'
-            f' style="font-size:16px; font-weight:700; color:{dir_color};'
-            f' margin-top:4px;">{signal["direction"]}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Signal</div><div style="font-size:16px; font-weight:700; color:{dir_color}; margin-top:4px;">{signal["direction"]}</div></div>',
             unsafe_allow_html=True,
         )
     with m4:
         beam_val_str = f"${signal['beam']:,.2f}"
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Target'
-            f' (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Target (BEAM)</div><div class="metric-value-blue">{beam_val_str}</div></div>',
             unsafe_allow_html=True,
         )
     with m5:
         conf_val = int(min(max(abs(signal["score"]) * 100, 15), 95))
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Confidence</div><div'
-            f' class="metric-value-blue">{conf_val}%</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Confidence</div><div class="metric-value-blue">{conf_val}%</div></div>',
             unsafe_allow_html=True,
         )
     with m6:
         st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Reset In</div><div'
-            f' style="font-size:16px; font-weight:700; color:#ffffff;'
-            f' margin-top:4px;">{mins_rem}m {secs_rem}s</div></div>',
+            f'<div class="metric-card"><div class="metric-label">Reset In</div><div style="font-size:16px; font-weight:700; color:#ffffff; margin-top:4px;">{mins_rem}m {secs_rem}s</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -520,19 +477,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with col_side:
         st.subheader("Risk & Market Health")
         st.markdown(
-            f'<div class="metric-card"><div'
-            f' style="display:flex; justify-content:space-between;'
-            f' margin-bottom:8px;"><span>LTZ Score</span> <b'
-            f' style="color:#38bdf8;">{risk_metrics["LTZ_Score"]:.2f}</b></div><div'
-            f' style="display:flex; justify-content:space-between;'
-            f' margin-bottom:8px;"><span>Spoof Score</span> <b'
-            f' style="color:#f59e0b;">{risk_metrics["Spoof_Score"]:.3f}</b></div><div'
-            f' style="display:flex; justify-content:space-between;'
-            f' margin-bottom:8px;"><span>Squeeze Risk</span> <b'
-            f' style="color:#ff5252;">{risk_metrics["Squeeze_Risk"]:.2f}</b></div><div'
-            ' style="display:flex;'
-            f' justify-content:space-between;"><span>Composite Risk</span> <b'
-            f' style="color:#ff5252;">{risk_metrics["Market_Risk"]:.2f}</b></div></div>',
+            f'<div class="metric-card"><div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>LTZ Score</span> <b style="color:#38bdf8;">{risk_metrics["LTZ_Score"]:.2f}</b></div><div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Spoof Score</span> <b style="color:#f59e0b;">{risk_metrics["Spoof_Score"]:.3f}</b></div><div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span>Squeeze Risk</span> <b style="color:#ff5252;">{risk_metrics["Squeeze_Risk"]:.2f}</b></div><div style="display:flex; justify-content:space-between;"><span>Composite Risk</span> <b style="color:#ff5252;">{risk_metrics["Market_Risk"]:.2f}</b></div></div>',
             unsafe_allow_html=True,
         )
 
@@ -566,15 +511,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     c_p1, c_p2 = st.columns(2)
     with c_p1:
         log_val = signal["paper_results"].get("LOG_PROB", 0.0)
+        log_color = "#00e676" if log_val >= 0 else "#ff5252"
+        formula_log = (
+            r"$P(Y=1 \mid X) = \frac{1}{1 + e^{-(\beta_0 + \sum \beta_i X_i)}}$"
+        )
         st.markdown(
-            r"""
+            f"""
         <div class="metric-card">
             <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOG_PROB (Logistic Probability Model)</div>
-            <div style="font-size:16px; font-weight:600; color:"""
-            + ("#00e676" if log_val >= 0 else "#ff5252")
-            + f"""">Value: {log_val:+.3f}</div>
+            <div style="font-size:16px; font-weight:600; color:{log_color}">Value: {log_val:+.3f}</div>
             <div class="formula-box">
-                <b>Formula:</b> $P(Y=1 | X) = \\frac{{1}}{{1 + e^{-(\\beta_0 + \\sum \\beta_i X_i)}}}$<br>
+                <b>Formula:</b> {formula_log}<br>
                 <i>Calculates directional likelihood using order flow features.</i>
             </div>
         </div>
@@ -584,15 +531,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
     with c_p2:
         lob_val = signal["paper_results"].get("LOB_TARGET", 0.0)
+        lob_color = "#00e676" if lob_val >= 0 else "#ff5252"
+        formula_lob = r"$LOB_{target} = \frac{\sum V_{bid} - \sum V_{ask}}{\sum V_{bid} + \sum V_{ask}} \times \Delta P$"
         st.markdown(
-            r"""
+            f"""
         <div class="metric-card">
             <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOB_TARGET (Limit Order Book Target)</div>
-            <div style="font-size:16px; font-weight:600; color:"""
-            + ("#00e676" if lob_val >= 0 else "#ff5252")
-            + f"""">Value: {lob_val:+.3f}</div>
+            <div style="font-size:16px; font-weight:600; color:{lob_color}">Value: {lob_val:+.3f}</div>
             <div class="formula-box">
-                <b>Formula:</b> $LOB_{{target}} = \\frac{{\\sum V_{{bid}} - \\sum V_{{ask}}}}{{\\sum V_{{bid}} + \\sum V_{{ask}}}} \\times \\Delta P$<br>
+                <b>Formula:</b> {formula_lob}<br>
                 <i>Predicts short-term pressure based on depth shifts.</i>
             </div>
         </div>
@@ -663,31 +610,23 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         wr1, wr2, wr3, wr4 = st.columns(4)
         with wr1:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Win'
-                f' Rate</div><div'
-                f' class="metric-value-green">{overall_win_rate:.1f}%</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Win Rate</div><div class="metric-value-green">{overall_win_rate:.1f}%</div></div>',
                 unsafe_allow_html=True,
             )
         with wr2:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Wins'
-                f' (W)</div><div style="font-size:20px; font-weight:700;'
-                f' color:#00e676; margin-top:4px;">{total_wins}</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Wins (W)</div><div style="font-size:20px; font-weight:700; color:#00e676; margin-top:4px;">{total_wins}</div></div>',
                 unsafe_allow_html=True,
             )
         with wr3:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Losses'
-                f' (L)</div><div style="font-size:20px; font-weight:700;'
-                f' color:#ff5252; margin-top:4px;">{total_losses}</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Losses (L)</div><div style="font-size:20px; font-weight:700; color:#ff5252; margin-top:4px;">{total_losses}</div></div>',
                 unsafe_allow_html=True,
             )
         with wr4:
             pending_count = len(df_log[df_log["outcome"] == "PENDING"])
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Pending'
-                f' Outcomes</div><div'
-                f' class="metric-value-blue">{pending_count}</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Pending Outcomes</div><div class="metric-value-blue">{pending_count}</div></div>',
                 unsafe_allow_html=True,
             )
 
