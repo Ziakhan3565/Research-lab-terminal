@@ -66,7 +66,7 @@ except ModuleNotFoundError:
 # STREAMLIT PAGE CONFIG & PERSISTENT CSV SETUP
 # ==========================================
 st.set_page_config(
-    page_title="12-Paper Research Lab Terminal",
+    page_title="Multi-Section Research Lab Terminal",
     layout="wide",
     initial_sidebar_state="auto",
 )
@@ -123,6 +123,10 @@ st.markdown(
         background: #111622; border: 1px solid #1e2638; border-radius: 10px;
         padding: 10px 16px; margin-bottom: 15px; font-weight: 600; font-size: 13px; line-height: 1.5;
     }
+    .formula-box {
+        background: #0d1117; border-left: 3px solid #38bdf8; padding: 10px; 
+        font-size: 12px; color: #cbd5e1; border-radius: 4px; margin-top: 6px;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -150,26 +154,24 @@ COINS_LIST = [
 ]
 
 TIMEFRAME_MAP = {
-    "1m": ("1m", 1),
-    "5m": ("5m", 5),
-    "10m": ("5m", 10),
-    "15m": ("15m", 15),
-    "30m": ("30m", 30),
-    "1h": ("1h", 60),
-    "4h": ("4h", 240),
+    "1m (Scalping)": ("1m", 1),
+    "15m (Medium TF)": ("15m", 15),
+    "30m (Medium TF)": ("30m", 30),
+    "1h (Intraday)": ("1h", 60),
+    "4h (Intraday)": ("4h", 240),
 }
 
 st.sidebar.markdown("### ⚡ Terminal Controls")
 selected_symbol = st.sidebar.selectbox(
-    "Select Cryptocurrency (For View)", COINS_LIST, index=0
+    "Select Cryptocurrency", COINS_LIST, index=0
 )
 selected_tf_label = st.sidebar.selectbox(
-    "Select Timeframe", list(TIMEFRAME_MAP.keys()), index=3
+    "Select Timeframe / Mode", list(TIMEFRAME_MAP.keys()), index=1
 )
 forecast_horizon = st.sidebar.slider("Forecast Horizon Candles", 5, 30, 30)
 
 st.sidebar.markdown("---")
-st.sidebar.success("🟢 **System Status: 12-Paper Lab Active**")
+st.sidebar.success("🟢 **System Status: Multi-Section Lab Active**")
 
 api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 
@@ -178,8 +180,8 @@ api_interval, tf_minutes = TIMEFRAME_MAP[selected_tf_label]
 # DATA FETCHING HELPERS
 # ==========================================
 @st.cache_data(ttl=15)
-def fetch_klines_data(symbol, tf_label, limit=100):
-    binance_tf = "5m" if tf_label == "10m" else tf_label
+def fetch_klines_data(symbol, tf_label_key, limit=100):
+    binance_tf = "1m" if "1m" in tf_label_key else ("15m" if "15m" in tf_label_key else ("30m" if "30m" in tf_label_key else ("1h" if "1h" in tf_label_key else "4h")))
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={binance_tf}&limit={limit}"
     try:
         res = requests.get(url, timeout=3).json()
@@ -226,11 +228,10 @@ def fetch_order_book_depth(symbol, depth_limit=10):
 
 
 # ==========================================
-# AUTO OUTCOME CHECKER FOR SAVED HISTORY
+# AUTO OUTCOME CHECKER
 # ==========================================
 def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
     tp_distance = sl_distance * 2
-
     if direction == "LONG":
         tp_price = entry_price + tp_distance
         sl_price = entry_price - sl_distance
@@ -247,48 +248,13 @@ def check_auto_outcome(entry_price, df_candles, direction, sl_distance):
                 return "LOSS"
             if row["Low"] <= tp_price:
                 return "WIN"
-
     return "PENDING"
 
 
-history_updated = False
-for item in st.session_state.trade_history_log:
-    if (
-        item.get("outcome", "PENDING") == "PENDING"
-        and item.get("direction") != "NEUTRAL"
-    ):
-        curr_df = fetch_klines_data(item["symbol"], item["timeframe"], limit=50)
-        if not curr_df.empty:
-            signal_time = pd.to_datetime(item["timestamp"])
-            future_candles = curr_df[curr_df["Time"] >= signal_time]
-
-            if future_candles.empty:
-                future_candles = curr_df
-
-            atr_val = (curr_df["High"] - curr_df["Low"]).mean()
-            sl_dist = (
-                atr_val
-                if not np.isnan(atr_val) and atr_val > 0
-                else (item["price"] * 0.01)
-            )
-
-            res_status = check_auto_outcome(
-                item["price"], future_candles, item["direction"], sl_dist
-            )
-            if res_status != "PENDING":
-                item["outcome"] = res_status
-                history_updated = True
-
-if history_updated:
-    save_persistent_history(st.session_state.trade_history_log)
-
-# ==========================================
-# FETCH DATA FOR SELECTED VIEW COIN ONLY
-# ==========================================
 df = fetch_klines_data(selected_symbol, selected_tf_label)
 bids, asks = fetch_order_book_depth(selected_symbol)
 
-st.markdown("## ⚡ Research Lab — 12-Model Multi-Asset Signal & Trade Engine")
+st.markdown("## ⚡ Research Lab — Multi-Section Strategy & Execution Terminal")
 
 if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
@@ -325,7 +291,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             if final_score >= 0.15
             else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
         )
-
         return {
             "score": final_score,
             "direction": trajectory_dir,
@@ -387,23 +352,42 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     st.markdown(
         f"""
     <div class="top-status-bar">
-        🔵 <b>Viewing: [{selected_symbol}]</b> | Timeframe: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
+        🔵 <b>Viewing: [{selected_symbol}]</b> | Mode/TF: {selected_tf_label} | <b>SIGNAL:</b> <span style="color:{dir_color};">{signal['direction']}</span> &nbsp;|&nbsp; 
         Net Score: <span style="color:#ff5252;">{signal['score']:+.3f}</span> &nbsp;|&nbsp; Target (BEAM): <span style="color:#38bdf8;">${signal['beam']:,.2f}</span> &nbsp;|&nbsp; 
-        ⏳ Candle Reset In: <b>{mins_rem}m {secs_rem}s</b>
+        ⏳ Reset In: <b>{mins_rem}m {secs_rem}s</b>
     </div>
     """,
         unsafe_allow_html=True,
     )
 
+    # ==========================================
+    # SECTIONS BASED ON TIMEFRAME/STRATEGY
+    # ==========================================
+    if "1m" in selected_tf_label:
+        st.markdown("### ⚡ Section 1: High-Frequency 1-Minute Scalping Engine")
+        st.info(
+            "Running micro-structure tracking tailored for rapid 1-minute execution windows."
+        )
+    elif "15m" in selected_tf_label or "30m" in selected_tf_label:
+        st.markdown(
+            "### ⏱️ Section 2: 15 to 30-Minute Trend & Order Flow Analysis"
+        )
+        st.info(
+            "Optimized medium timeframe sweet-spot balancing momentum and structural liquidity shifts."
+        )
+    else:
+        st.markdown(
+            "### 🌐 Section 3: Intraday Trading & Multi-Hour Strategy Lab"
+        )
+        st.info(
+            "Macro directional alignment and multi-hour execution framework for sustained intraday swings."
+        )
+
+    # Metrics Display Bar
     m1, m2, m3, m4, m5, m6 = st.columns([1.5, 1, 1, 1, 1, 1])
     close_val = df["Close"].iloc[-1]
     prev_val = df["Close"].iloc[-2]
     pct_change = ((close_val - prev_val) / prev_val) * 100
-    signal_card_color = (
-        "#00e676"
-        if signal["direction"] == "LONG"
-        else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
-    )
 
     with m1:
         st.markdown(
@@ -411,7 +395,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             f" {selected_symbol}</div><div"
             f' class="metric-value-green">${close_val:,.2f}</div><div'
             f' style="font-size:11px; color:#00e676;">+{pct_change:.2f}%'
-            " (24h)</div></div>",
+            "</div></div>",
             unsafe_allow_html=True,
         )
     with m2:
@@ -424,7 +408,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with m3:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Signal</div><div'
-            f' style="font-size:16px; font-weight:700; color:{signal_card_color};'
+            f' style="font-size:16px; font-weight:700; color:{dir_color};'
             f' margin-top:4px;">{signal["direction"]}</div></div>',
             unsafe_allow_html=True,
         )
@@ -436,40 +420,12 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             unsafe_allow_html=True,
         )
     with m5:
-        # Dynamic Confidence Gauge based on absolute score strength
         conf_val = int(min(max(abs(signal["score"]) * 100, 15), 95))
-        fig_gauge = go.Figure(
-            go.Pie(
-                values=[conf_val, 100 - conf_val],
-                hole=0.7,
-                marker_colors=["#f59e0b", "#1e2638"],
-                textinfo="none",
-                showlegend=False,
-            )
-        )
-        fig_gauge.update_layout(
-            annotations=[
-                dict(
-                    text=f"<b>{conf_val}%</b>",
-                    x=0.5,
-                    y=0.5,
-                    font_size=14,
-                    font_color="#ffffff",
-                    showarrow=False,
-                )
-            ],
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=70,
-            paper_bgcolor="rgba(0,0,0,0)",
-        )
         st.markdown(
-            '<div class="metric-card"><div class="metric-label">Confidence</div>',
+            f'<div class="metric-card"><div class="metric-label">Confidence</div><div'
+            f' class="metric-value-blue">{conf_val}%</div></div>',
             unsafe_allow_html=True,
         )
-        st.plotly_chart(
-            fig_gauge, use_container_width=True, config={"displayModeBar": False}
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
     with m6:
         st.markdown(
             f'<div class="metric-card"><div class="metric-label">Reset In</div><div'
@@ -478,45 +434,12 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             unsafe_allow_html=True,
         )
 
-    # ==========================================
-    # POWER TRADING & RISK ENGINE METRICS BAR
-    # ==========================================
-    st.markdown("---")
-    st.markdown("### ⚡ Power Trading & Risk Monitoring Engine")
-    r1, r2, r3, r4 = st.columns(4)
-    with r1:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">LTZ Score</div><div'
-            f' style="font-size:18px; font-weight:700;'
-            f' color:#38bdf8;">{risk_metrics["LTZ_Score"]:.2f}</div></div>',
-            unsafe_allow_html=True,
-        )
-    with r2:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Spoof'
-            f' Score</div><div style="font-size:18px; font-weight:700;'
-            f' color:#f59e0b;">{risk_metrics["Spoof_Score"]:.3f}</div></div>',
-            unsafe_allow_html=True,
-        )
-    with r3:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Squeeze'
-            f' Risk</div><div style="font-size:18px; font-weight:700;'
-            f' color:#ff5252;">{risk_metrics["Squeeze_Risk"]:.2f}</div></div>',
-            unsafe_allow_html=True,
-        )
-    with r4:
-        st.markdown(
-            f'<div class="metric-card"><div class="metric-label">Composite Market'
-            f' Risk</div><div style="font-size:18px; font-weight:700;'
-            f' color:#ff5252;">{risk_metrics["Market_Risk"]:.2f}</div></div>',
-            unsafe_allow_html=True,
-        )
-
+    # Chart & Secondary Overview
     col_chart, col_side = st.columns([2.5, 1])
-
     with col_chart:
-        st.subheader(f"Price Chart ({selected_symbol} - {selected_tf_label})")
+        st.subheader(
+            f"Price Trajectory View ({selected_symbol} - {selected_tf_label})"
+        )
         time_delta = pd.Timedelta(minutes=tf_minutes)
         future_times = [
             df["Time"].iloc[-1] + (i * time_delta)
@@ -548,18 +471,13 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 decreasing_line_color="#ff5252",
             )
         )
-        traj_color = (
-            "#00e676"
-            if signal["direction"] == "LONG"
-            else ("#ff5252" if signal["direction"] == "SHORT" else "#38bdf8")
-        )
         fig.add_trace(
             go.Scatter(
                 x=[df["Time"].iloc[-1]] + future_times,
                 y=[close_val] + list(forecast_prices),
                 mode="lines+markers",
                 name="Trajectory",
-                line=dict(color=traj_color, width=2, dash="dot"),
+                line=dict(color=dir_color, width=2, dash="dot"),
             )
         )
         fig.add_hline(
@@ -574,10 +492,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             line_color="#ff5252",
             annotation_text=f"BASE: ${signal['base']:,.2f}",
         )
-
         fig.update_layout(
             template="plotly_dark",
-            height=420,
+            height=400,
             xaxis_rangeslider_visible=False,
             paper_bgcolor="#111622",
             plot_bgcolor="#111622",
@@ -586,23 +503,25 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.plotly_chart(fig, use_container_width=True)
 
     with col_side:
-        st.subheader("Market Overview (24h)")
+        st.subheader("Risk & Market Health")
         st.markdown(
-            '<div class="metric-card"><div style="display:flex;'
-            ' justify-content:space-between; margin-bottom:6px;"><span>Market'
-            ' Cap</span> <b>$2.28T <span style="color:#00e676;">+1.25%</span></b></div><div'
-            ' style="display:flex; justify-content:space-between;'
-            ' margin-bottom:6px;"><span>BTC Dominance</span> <b>52.41% <span'
-            ' style="color:#ff5252;">-0.38%</span></b></div><div'
-            ' style="display:flex; justify-content:space-between;'
-            ' margin-bottom:6px;"><span>Fear & Greed</span> <b>72'
-            ' (Greed)</b></div><div style="display:flex;'
-            ' justify-content:space-between;"><span>Funding Rate</span>'
-            ' <b>0.0102%</b></div></div>',
+            f'<div class="metric-card"><div'
+            f' style="display:flex; justify-content:space-between;'
+            f' margin-bottom:8px;"><span>LTZ Score</span> <b'
+            f' style="color:#38bdf8;">{risk_metrics["LTZ_Score"]:.2f}</b></div><div'
+            f' style="display:flex; justify-content:space-between;'
+            f' margin-bottom:8px;"><span>Spoof Score</span> <b'
+            f' style="color:#f59e0b;">{risk_metrics["Spoof_Score"]:.3f}</b></div><div'
+            f' style="display:flex; justify-content:space-between;'
+            f' margin-bottom:8px;"><span>Squeeze Risk</span> <b'
+            f' style="color:#ff5252;">{risk_metrics["Squeeze_Risk"]:.2f}</b></div><div'
+            ' style="display:flex;'
+            f' justify-content:space-between;"><span>Composite Risk</span> <b'
+            f' style="color:#ff5252;">{risk_metrics["Market_Risk"]:.2f}</b></div></div>',
             unsafe_allow_html=True,
         )
 
-        st.subheader("Volume Trend")
+        st.subheader("Quick Volume Metric")
         fig_vol = go.Figure(
             go.Bar(
                 x=list(range(10)),
@@ -611,7 +530,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             )
         )
         fig_vol.update_layout(
-            height=120,
+            height=130,
             margin=dict(l=0, r=0, t=0, b=0),
             paper_bgcolor="#111622",
             plot_bgcolor="#111622",
@@ -621,15 +540,56 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             fig_vol, use_container_width=True, config={"displayModeBar": False}
         )
 
-    b1, b2, b3 = st.columns([1.2, 1, 1.2])
+    # ==========================================
+    # NEW PARAMETERS (LOG_PROB & LOB_TARGET) WITH FORMULAS & SCORES
+    # ==========================================
+    st.markdown("---")
+    st.subheader(
+        "🔬 Comprehensive Research Papers & New Model Metrics (with Formulas)"
+    )
 
+    c_p1, c_p2 = st.columns(2)
+    with c_p1:
+        log_val = signal["paper_results"].get("LOG_PROB", 0.0)
+        st.markdown(
+            f"""
+        <div class="metric-card">
+            <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOG_PROB (Logistic Probability Model)</div>
+            <div style="font-size:16px; font-weight:600; color:{'#00e676' if log_val >= 0 else '#ff5252'};">Value: {log_val:+.3f}</div>
+            <div class="formula-box">
+                <b>Formula:</b> $P(Y=1 | X) = \\frac{1}{1 + e^{-(\\beta_0 + \\sum \\beta_i X_i)}}$<br>
+                <i>Calculates directional likelihood using order flow features.</i>
+            </div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with c_p2:
+        lob_val = signal["paper_results"].get("LOB_TARGET", 0.0)
+        st.markdown(
+            f"""
+        <div class="metric-card">
+            <div style="font-weight:700; font-size:14px; color:#38bdf8; margin-bottom:4px;">LOB_TARGET (Limit Order Book Target)</div>
+            <div style="font-size:16px; font-weight:600; color:{'#00e676' if lob_val >= 0 else '#ff5252'};">Value: {lob_val:+.3f}</div>
+            <div class="formula-box">
+                <b>Formula:</b> $LOB_{target} = \\frac{\\sum V_{bid} - \\sum V_{ask}}{\\sum V_{bid} + \\sum V_{ask}} \\times \\Delta P$<br>
+                <i>Predicts short-term price pressure based on depth shifts.</i>
+            </div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    # Main scoreboard table for all papers
+    b1, b2 = st.columns([1.5, 1])
     with b1:
-        st.subheader("🔬 12-Papers Scoreboard")
+        st.subheader("📋 All 12 Papers Scoreboard")
         paper_df = pd.DataFrame([
             {
-                "Paper": k,
-                "Signal Value": f"{v:+.3f}",
-                "Evolved Weight": f"{signal['evolved_weights'][k]*100:.1f}%",
+                "Paper / Metric": k,
+                "Value": f"{v:+.3f}",
+                "Weight": f"{signal['evolved_weights'][k]*100:.1f}%",
                 "Status": (
                     "PASS🟢"
                     if v > 0.1
@@ -638,10 +598,10 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             }
             for k, v in signal["paper_results"].items()
         ])
-        st.dataframe(paper_df, use_container_width=True, hide_index=True, height=260)
+        st.dataframe(paper_df, use_container_width=True, hide_index=True, height=280)
 
     with b2:
-        st.subheader("Signal Breakdown")
+        st.subheader("Signal Distribution")
         pass_count = sum(1 for v in signal["paper_results"].values() if v > 0.1)
         fail_count = sum(1 for v in signal["paper_results"].values() if v < -0.1)
         neutral_count = len(signal["paper_results"]) - pass_count - fail_count
@@ -655,7 +615,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             )
         )
         fig_summary.update_layout(
-            height=240,
+            height=260,
             margin=dict(l=0, r=0, t=0, b=0),
             paper_bgcolor="#111622",
             showlegend=True,
@@ -664,42 +624,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             fig_summary, use_container_width=True, config={"displayModeBar": False}
         )
 
-    with b3:
-        st.subheader("⚡ Key Metrics & Orderbook")
-        obi_val = signal["paper_results"].get("OFI", 0.0)
-        vpin_val = signal["paper_results"].get("VPIN", 0.0)
-        log_prob_val = signal["paper_results"].get("LOG_PROB", 0.0)
-        lob_target_val = signal["paper_results"].get("LOB_TARGET", 0.0)
-        
-        st.markdown(
-            f'<div class="metric-card" style="height:260px;"><div'
-            f' style="display:flex; justify-content:space-between; padding:5px'
-            f' 0;"><span>Logistic Prob (LOG)</span> <b'
-            f' style="color:#00e676;">{log_prob_val:+.2f}</b></div><div style="display:flex;'
-            f' justify-content:space-between; padding:5px 0;"><span>LOB Target Signal</span> <b'
-            f' style="color:#38bdf8;">{lob_target_val:+.2f}</b></div><div style="display:flex;'
-            f' justify-content:space-between; padding:5px 0;"><span>OFI (Imbalance)</span> <b'
-            f' style="color:#ff5252;">{obi_val:+.3f}</b></div><div style="display:flex;'
-            f' justify-content:space-between; padding:5px 0;"><span>VPIN Toxicity</span> <b'
-            f' style="color:#ff5252;">{vpin_val:+.3f}</b></div><div style="display:flex;'
-            f' justify-content:space-between; padding:5px 0;"><span>Flow Strength</span> <b'
-            f' style="color:#ff5252;">{signal["score"]:+.3f}</b></div><div'
-            f' style="display:flex; justify-content:space-between; padding:5px'
-            f' 0;"><span>Liquidity Health</span> <b'
-            f' style="color:#f59e0b;">68 / 100</b></div></div>',
-            unsafe_allow_html=True,
-        )
-
     # ==========================================
     # PERFORMANCE & HISTORICAL LOG SECTION
     # ==========================================
     st.markdown("---")
-    st.subheader("📊 Performance, Analytics & Automated Trade History Log")
+    st.subheader("📊 Performance & Automated Trade History Log")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
         df_log["dt"] = pd.to_datetime(df_log["timestamp"])
-        df_log["date"] = df_log["dt"].dt.date
 
         total_wins = len(df_log[df_log["outcome"] == "WIN"])
         total_losses = len(df_log[df_log["outcome"] == "LOSS"])
@@ -711,21 +644,21 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         wr1, wr2, wr3, wr4 = st.columns(4)
         with wr1:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Overall Win'
+                f'<div class="metric-card"><div class="metric-label">Win'
                 f' Rate</div><div'
                 f' class="metric-value-green">{overall_win_rate:.1f}%</div></div>',
                 unsafe_allow_html=True,
             )
         with wr2:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Total Wins'
+                f'<div class="metric-card"><div class="metric-label">Wins'
                 f' (W)</div><div style="font-size:20px; font-weight:700;'
                 f' color:#00e676; margin-top:4px;">{total_wins}</div></div>',
                 unsafe_allow_html=True,
             )
         with wr3:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Total Losses'
+                f'<div class="metric-card"><div class="metric-label">Losses'
                 f' (L)</div><div style="font-size:20px; font-weight:700;'
                 f' color:#ff5252; margin-top:4px;">{total_losses}</div></div>',
                 unsafe_allow_html=True,
@@ -739,21 +672,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 unsafe_allow_html=True,
             )
 
-        st.markdown("### 📜 Automated Signal & Outcome Log")
         st.dataframe(
-            df_log.drop(columns=["bucket", "dt", "date"], errors="ignore"),
+            df_log.drop(columns=["bucket", "dt"], errors="ignore"),
             use_container_width=True,
             hide_index=True,
-            height=260,
+            height=250,
         )
     else:
-        st.info(
-            "No trade or signal history logged yet. History will populate"
-            " automatically as candles update."
-        )
+        st.info("No trade or signal history logged yet.")
 
 else:
-    st.warning(
-        "⚠️ Unable to fetch live market data or order book depth. Please verify"
-        " network connection or select a different asset/timeframe."
-    )
+    st.warning("⚠️ Unable to fetch live market data. Please verify connection.")
