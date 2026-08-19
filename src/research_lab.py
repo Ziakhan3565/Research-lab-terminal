@@ -97,7 +97,7 @@ class TenPaperResearchLab:
 
 # === ULTRA-STABLE SIGNAL HYSTERESIS MANAGER (NOISE & FLUCTUATION FILTER) ===
 class SignalHysteresisManager:
-    def __init__(self, entry_threshold=0.25, exit_threshold=0.05, window=5):
+    def __init__(self, entry_threshold=0.32, exit_threshold=0.03, window=25):
         self.current_signal = "NEUTRAL"
         self.entry_threshold = entry_threshold
         self.exit_threshold = exit_threshold
@@ -105,14 +105,14 @@ class SignalHysteresisManager:
         self.window = window
 
     def update_signal(self, final_score):
-        # Smooth score using moving average to avoid sudden spikes
+        # Smooth score using larger moving average window to filter noise
         self.score_history.append(final_score)
         if len(self.score_history) > self.window:
             self.score_history.pop(0)
         
         smoothed_score = np.mean(self.score_history)
 
-        # Hysteresis state machine
+        # Strict Hysteresis state machine to prevent rapid flipping
         if self.current_signal == "NEUTRAL":
             if smoothed_score >= self.entry_threshold:
                 self.current_signal = "LONG"
@@ -128,6 +128,31 @@ class SignalHysteresisManager:
                 self.current_signal = "NEUTRAL"
                 
         return self.current_signal
+
+
+# === MULTI-TIMEFRAME CONFIRMATION ENGINE (AND LOGIC) ===
+class MultiTimeframeFilter:
+    """
+    Yeh class 15m, 1h, aur 4h ke signals ko combine karti hai taake 
+    chote time-frame ki fluctuation barhi trades ko disturb na kare.
+    """
+    def __init__(self):
+        pass
+
+    def get_confirmed_signal(self, sig_15m, sig_1h, sig_4h):
+        # Agar 15m aur 1h dono ka signal match kare tabhi final execute ho
+        if sig_15m == "LONG" and sig_1h == "LONG":
+            return "STRONG LONG"
+        elif sig_15m == "SHORT" and sig_1h == "SHORT":
+            return "STRONG SHORT"
+        
+        # Agar sirf 15m match kare lekin higher TF (1h/4h) neutral ya against ho
+        elif sig_15m == "LONG":
+            return "WEAK LONG (Caution)"
+        elif sig_15m == "SHORT":
+            return "WEAK SHORT (Caution)"
+        
+        return "NEUTRAL"
 
 
 # === POWER TRADING & LIQUIDATION/MANIPULATION RISK ENGINE ===
