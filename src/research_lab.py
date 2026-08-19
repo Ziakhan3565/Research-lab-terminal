@@ -95,33 +95,37 @@ class TenPaperResearchLab:
         return results, final_score, weights
 
 
-# === STABLE SIGNAL MANAGER (HYSTERESIS / NOISE FILTER) ===
+# === ULTRA-STABLE SIGNAL HYSTERESIS MANAGER (NOISE & FLUCTUATION FILTER) ===
 class SignalHysteresisManager:
-    """
-    Yeh class chote-mote changes ko ignore karti hai aur signal ko tab tak 
-    lock rakhi hai jab tak koi high-level trend reversal ya exit threshold cross na ho.
-    """
-    def __init__(self, entry_threshold=0.20, exit_threshold=0.05):
+    def __init__(self, entry_threshold=0.25, exit_threshold=0.05, window=5):
         self.current_signal = "NEUTRAL"
         self.entry_threshold = entry_threshold
         self.exit_threshold = exit_threshold
+        self.score_history = []
+        self.window = window
 
     def update_signal(self, final_score):
+        # Smooth score using moving average to avoid sudden spikes
+        self.score_history.append(final_score)
+        if len(self.score_history) > self.window:
+            self.score_history.pop(0)
+        
+        smoothed_score = np.mean(self.score_history)
+
+        # Hysteresis state machine
         if self.current_signal == "NEUTRAL":
-            if final_score >= self.entry_threshold:
+            if smoothed_score >= self.entry_threshold:
                 self.current_signal = "LONG"
-            elif final_score <= -self.entry_threshold:
+            elif smoothed_score <= -self.entry_threshold:
                 self.current_signal = "SHORT"
         
         elif self.current_signal == "LONG":
-            # Agar score exit threshold se niche gir jaye tabhi neutral ya short hoga
-            if final_score <= -self.exit_threshold:
-                self.current_signal = "SHORT" if final_score <= -self.entry_threshold else "NEUTRAL"
+            if smoothed_score < self.exit_threshold:
+                self.current_signal = "NEUTRAL"
                 
         elif self.current_signal == "SHORT":
-            # Agar score exit threshold se upar chala jaye tabhi neutral ya long hoga
-            if final_score >= self.exit_threshold:
-                self.current_signal = "LONG" if final_score >= self.entry_threshold else "NEUTRAL"
+            if smoothed_score > -self.exit_threshold:
+                self.current_signal = "NEUTRAL"
                 
         return self.current_signal
 
