@@ -67,7 +67,7 @@ section[data-testid="stSidebar"] {
 # ============================================================
 COINS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "GRASSUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+     "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
     "NEARUSDT", "LTCUSDT", "BCHUSDT", "TRXUSDT", "PEPEUSDT",
 ]
 
