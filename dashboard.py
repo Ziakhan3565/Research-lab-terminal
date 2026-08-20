@@ -7,6 +7,49 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
+from streamlit_autorefresh import st_autorefresh  # <-- 1. Yahan library import ki hai
+
+# ==========================================
+# 2. STREAMLIT CONFIG & PERSISTENT CSV SETUP
+# ==========================================
+st.set_page_config(
+    page_title="Quantitative Research & Paper Trading Terminal",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# <-- 2. Yahan Auto-Refresh lagaya hai (Har 5 seconds / 5000ms baad page rerun hoga)
+count = st_autorefresh(interval=5000, limit=None, key="research_lab_auto_refresh")
+
+CSV_FILE = "signal_history.csv"
+
+def load_persistent_history():
+    if os.path.exists(CSV_FILE):
+        try:
+            df_hist = pd.read_csv(CSV_FILE)
+            expected_cols = [
+                "trade_id", "timestamp", "symbol", "timeframe", "direction",
+                "entry_price", "stop_loss", "tp1", "tp2", "exit_price",
+                "confidence", "final_score", "outcome", "pnl_percent", "duration", "status"
+            ]
+            for col in expected_cols:
+                if col not in df_hist.columns:
+                    df_hist[col] = "PENDING" if col == "outcome" else 0.0
+            return df_hist.to_dict("records")
+        except Exception:
+            return []
+    return []
+
+def save_persistent_history(history_list):
+    try:
+        df_hist = pd.DataFrame(history_list)
+        df_hist.to_csv(CSV_FILE, index=False)
+    except Exception as e:
+        st.error(f"Error saving history to CSV: {e}")
+
+if "trade_history_log" not in st.session_state:
+    st.session_state.trade_history_log = load_persistent_history()
+
 
 # ==========================================
 # 1. RESEARCH LAB & RISK ENGINE MODULES (CORE)
@@ -130,45 +173,6 @@ class PowerTradingRiskEngine:
 
 
 # ==========================================
-# 2. STREAMLIT CONFIG & PERSISTENT CSV SETUP
-# ==========================================
-st.set_page_config(
-    page_title="Quantitative Research & Paper Trading Terminal",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-CSV_FILE = "signal_history.csv"
-
-def load_persistent_history():
-    if os.path.exists(CSV_FILE):
-        try:
-            df_hist = pd.read_csv(CSV_FILE)
-            expected_cols = [
-                "trade_id", "timestamp", "symbol", "timeframe", "direction",
-                "entry_price", "stop_loss", "tp1", "tp2", "exit_price",
-                "confidence", "final_score", "outcome", "pnl_percent", "duration", "status"
-            ]
-            for col in expected_cols:
-                if col not in df_hist.columns:
-                    df_hist[col] = "PENDING" if col == "outcome" else 0.0
-            return df_hist.to_dict("records")
-        except Exception:
-            return []
-    return []
-
-def save_persistent_history(history_list):
-    try:
-        df_hist = pd.DataFrame(history_list)
-        df_hist.to_csv(CSV_FILE, index=False)
-    except Exception as e:
-        st.error(f"Error saving history to CSV: {e}")
-
-if "trade_history_log" not in st.session_state:
-    st.session_state.trade_history_log = load_persistent_history()
-
-
-# ==========================================
 # 3. PROFESSIONAL STYLING & THEME
 # ==========================================
 st.markdown("""
@@ -239,7 +243,6 @@ def fetch_klines_data(symbol, tf_key, limit=100):
         df.set_index("Time", inplace=True)
         return df.reset_index()[["Time", "Open", "High", "Low", "Close", "Volume"]]
     except Exception:
-        # Fallback Mock DataFrame to protect against blank screen freeze
         dates = pd.date_range(end=datetime.datetime.now(), periods=limit, freq=binance_tf)
         base_p = 60000.0
         closes = base_p + np.cumsum(np.random.normal(0, 10, limit))
@@ -261,7 +264,6 @@ def fetch_order_book_depth(symbol, depth_limit=20):
             return np.array(res["bids"], dtype=float), np.array(res["asks"], dtype=float)
     except Exception:
         pass
-    # Fallback Order Book Arrays
     dummy_bids = np.array([[60000 - i*2, 1.5] for i in range(20)], dtype=float)
     dummy_asks = np.array([[60000 + i*2, 1.5] for i in range(20)], dtype=float)
     return dummy_bids, dummy_asks
@@ -530,7 +532,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         with p2:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Closed Trades</div><div class="metric-val-blue">{closed_trades}</div></div>', unsafe_allow_html=True)
         with p3:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Wins / Losses</div><div style="font-size:16px; font-weight:700; color:#00e676;">{wins}W / {losses}L</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Wins / Losses</div><div style="font-size:16px; font-weight:750; color:#00e676;">{wins}W / {losses}L</div></div>', unsafe_allow_html=True)
         with p4:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Pending</div><div class="metric-val-blue">{pending}</div></div>', unsafe_allow_html=True)
         with p5:
@@ -553,4 +555,3 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
 else:
     st.warning("⚠️ Data pipeline initializing or connection restricted. Please refresh.")
-    
