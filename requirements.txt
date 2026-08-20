@@ -5,4 +5,3 @@ plotly
 requests
 ccxt 
 streamlit-autorefresh
-scikit-learn
