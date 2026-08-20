@@ -1,21 +1,13 @@
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.calibration import CalibratedClassifierCV
 
 class TenPaperResearchLab:
     def __init__(self, target_vol=0.15):
         self.target_vol = target_vol
         self.scaler = StandardScaler()
         
-        # Heavy Online Machine Learning Classifier (Stochastic Gradient Descent for live streaming data)
-        # Yeh model har trade outcome ya feedback ke sath continuous learn karta hai
-        base_model = SGDClassifier(loss='log_loss', penalty='l2', alpha=0.0001, max_iter=1000, random_state=42)
-        self.ml_model = CalibratedClassifierCV(base_estimator=base_model, method='sigmoid', cv='prefit')
-        self.is_model_trained = False
-        
-        # Initial feature fallback weights for all 12 notebook formulas
+        # Initial feature weights for all 12 notebook formulas
         self.feature_names = [
             "HAWKES", "BOOK_IMB", "TAKER_FLOW", "QUANT_IMPLY", 
             "BAYESIAN", "QUANTILES", "TARGET_INV", "ADAPT_CONF", 
@@ -98,50 +90,9 @@ class TenPaperResearchLab:
         results = self.extract_features(df, bids, asks)
         feature_vector = np.array([results[k] for k in self.feature_names]).reshape(1, -1)
         
-        # Standardize features for Machine Learning input
-        try:
-            scaled_features = self.scaler.partial_fit(feature_vector).transform(feature_vector)
-        except Exception:
-            scaled_features = feature_vector
-
-        # --- MACHINE LEARNING ENSEMBLE PREDICTION ---
-        # Agar performance history mojood hai toh online training loop run hoga
-        if performance_history and len(performance_history) >= 5:
-            try:
-                X_train = []
-                y_train = []
-                for hist in performance_history[-30:]: # Last 30 records se train karein
-                    # Dummy historical reconstruction for training matrix
-                    fake_feat = np.random.uniform(-1, 1, len(self.feature_names))
-                    X_train.append(fake_feat)
-                    outcome_val = 1 if hist.get("outcome") == "WIN" else 0
-                    y_train.append(outcome_val)
-                
-                if len(set(y_train)) > 1:
-                    X_arr = np.array(X_train)
-                    y_arr = np.array(y_train)
-                    self.scaler.fit(X_arr)
-                    X_scaled = self.scaler.transform(X_arr)
-                    
-                    base_clf = SGDClassifier(loss='log_loss', max_iter=500, random_state=42)
-                    base_clf.fit(X_scaled, y_arr)
-                    self.ml_model.base_estimator = base_clf
-                    self.ml_model.fit(X_scaled, y_arr)
-                    self.is_model_trained = True
-            except Exception:
-                pass
-
-        # Compute final score via ML Probability or Weighted Linear Ensemble
-        if self.is_model_trained:
-            try:
-                ml_prob = self.ml_model.predict_proba(scaled_features)[0][1] # Probability of winning / upward move
-                final_score = float((ml_prob - 0.5) * 2.0) # Map [0, 1] to [-1, 1]
-            except Exception:
-                weight_vector = np.array(list(self.dynamic_weights.values()))
-                final_score = float(np.dot(feature_vector[0], weight_vector))
-        else:
-            weight_vector = np.array(list(self.dynamic_weights.values()))
-            final_score = float(np.dot(feature_vector[0], weight_vector))
+        # Compute final score via Weighted Linear Ensemble directly (Clean & Fast)
+        weight_vector = np.array(list(self.dynamic_weights.values()))
+        final_score = float(np.dot(feature_vector[0], weight_vector))
 
         return results, final_score, self.dynamic_weights
 
