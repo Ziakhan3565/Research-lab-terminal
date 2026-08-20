@@ -8,6 +8,8 @@ import pandas as pd
 import requests
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
+from streamlit_autorefresh import st_autorefresh
 
 from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
@@ -65,12 +67,13 @@ section[data-testid="stSidebar"] {
 # ============================================================
 COINS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+    "GRASSUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
     "NEARUSDT", "LTCUSDT", "BCHUSDT", "TRXUSDT", "PEPEUSDT",
 ]
 
 TIMEFRAMES = {
     "1m": ("1m", 1),
+    "5m": ("5m", 5),
     "15m": ("15m", 15),
     "30m": ("30m", 30),
     "1h": ("1h", 60),
@@ -837,7 +840,7 @@ symbol = st.sidebar.selectbox(
 tf_label = st.sidebar.selectbox(
     "Timeframe",
     list(TIMEFRAMES.keys()),
-    index=1
+    index=list(TIMEFRAMES.keys()).index("5m")
 )
 
 paper_mode = st.sidebar.toggle(
@@ -866,15 +869,13 @@ st.sidebar.caption(
 # ============================================================
 # REFRESH
 # ============================================================
-# No browser-level hard refresh. This avoids the black-screen flash.
-
-# Streamlit native soft refresh (no full browser reload).
-# It reruns the app without navigating away from the page.
-if auto_refresh and hasattr(st, "fragment"):
-    @st.fragment(run_every="5s")
-    def _refresh_tick():
-        st.empty()
-    _refresh_tick()
+# Soft Streamlit rerun only. No browser-level hard refresh.
+# This prevents the black-screen unload/reload effect.
+if auto_refresh:
+    st_autorefresh(
+        interval=5000,
+        key="quant_terminal_refresh"
+    )
 
 
 # ============================================================
@@ -1052,11 +1053,57 @@ st.markdown(
         </div>
         <div class="small">
             Live Binance Data • 12-Feature Research Engine •
-            Risk Engine • Paper Trade Tracker
+            Risk Engine • Paper Trade Tracker • 5m + GRASS
         </div>
     </div>
     """,
     unsafe_allow_html=True
+)
+
+# ============================================================
+# SHARE BUTTON
+# ============================================================
+# Native Web Share on supported browsers; otherwise copy the
+# current dashboard URL to the clipboard.
+components.html(
+    """
+    <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px 0;">
+      <button id="shareBtn"
+        style="
+          border:1px solid #30384a;
+          border-radius:9px;
+          background:#111622;
+          color:#e2e8f0;
+          padding:8px 14px;
+          font-size:14px;
+          cursor:pointer;
+        ">
+        🔗 Share
+      </button>
+    </div>
+    <script>
+      const btn = document.getElementById("shareBtn");
+      btn.onclick = async () => {
+        const url = window.parent.location.href;
+        try {
+          if (navigator.share) {
+            await navigator.share({
+              title: "Quant Research Trading Terminal",
+              text: "Live Quant Research Trading Terminal",
+              url: url
+            });
+          } else if (navigator.clipboard) {
+            await navigator.clipboard.writeText(url);
+            btn.innerText = "✅ Link Copied";
+            setTimeout(() => btn.innerText = "🔗 Share", 1800);
+          } else {
+            window.prompt("Copy dashboard URL:", url);
+          }
+        } catch (e) {}
+      };
+    </script>
+    """,
+    height=44,
 )
 
 
