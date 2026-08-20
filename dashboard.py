@@ -4,10 +4,6 @@ import numpy as np
 import time
 import json
 
-# ============================================================
-# IMPORT ENGINE
-# ============================================================
-
 from engine import IntegratedTradingEngine
 
 
@@ -16,102 +12,92 @@ from engine import IntegratedTradingEngine
 # ============================================================
 
 st.set_page_config(
-    page_title="TRI Quant Trading Engine",
-    page_icon="📊",
+    page_title="Research Lab Terminal",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 
 # ============================================================
-# CUSTOM CSS
+# CSS
 # ============================================================
 
-st.markdown("""
-<style>
+st.markdown(
+    """
+    <style>
 
-.main {
-    background-color: #0b0f14;
-}
+    .main {
+        background-color: #0b0f14;
+    }
 
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
-}
+    .block-container {
+        padding-top: 1.2rem;
+        padding-bottom: 2rem;
+    }
 
-.metric-card {
-    background: #111820;
-    border: 1px solid #26313d;
-    border-radius: 12px;
-    padding: 15px;
-    margin-bottom: 10px;
-}
+    .signal-long {
+        background: #12351f;
+        border: 1px solid #1f9d55;
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+    }
 
-.signal-long {
-    background: #12351f;
-    border: 1px solid #1f9d55;
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-}
+    .signal-short {
+        background: #3b1518;
+        border: 1px solid #e74c3c;
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+    }
 
-.signal-short {
-    background: #3b1518;
-    border: 1px solid #e74c3c;
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-}
+    .signal-wait {
+        background: #302b12;
+        border: 1px solid #d4ac0d;
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+    }
 
-.signal-wait {
-    background: #302b12;
-    border: 1px solid #d4ac0d;
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-}
+    .small-text {
+        color: #9aa5b1;
+        font-size: 13px;
+    }
 
-.small-text {
-    color: #8f9aa6;
-    font-size: 13px;
-}
+    .big-number {
+        font-size: 32px;
+        font-weight: 700;
+    }
 
-.big-number {
-    font-size: 28px;
-    font-weight: bold;
-}
-
-.section-title {
-    font-size: 20px;
-    font-weight: 700;
-    margin-top: 15px;
-    margin-bottom: 10px;
-}
-
-</style>
-""", unsafe_allow_html=True)
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
 # ============================================================
-# ENGINE
+# RESEARCH LAB MAIN ENGINE
 # ============================================================
 
 @st.cache_resource
-def load_engine():
+def load_research_lab():
+
     return IntegratedTradingEngine()
 
 
-engine = load_engine()
+research_lab = load_research_lab()
 
 
 # ============================================================
 # HEADER
 # ============================================================
 
-st.title("⚡ TRI Quant Trading Engine")
+st.title("🧠 RESEARCH LAB TERMINAL")
 
 st.caption(
-    "TRI Line + 12 Research Features + Order Book + ML + Risk Engine"
+    "Research Lab = MAIN ENGINE | "
+    "TRI + 12 Research Features + Order Book + Risk"
 )
 
 
@@ -119,7 +105,7 @@ st.caption(
 # SIDEBAR
 # ============================================================
 
-st.sidebar.header("⚙️ Engine Settings")
+st.sidebar.header("⚙️ MARKET SETTINGS")
 
 symbol = st.sidebar.text_input(
     "Symbol",
@@ -139,6 +125,13 @@ timeframe = st.sidebar.selectbox(
     index=1
 )
 
+data_mode = st.sidebar.selectbox(
+    "Market Data",
+    [
+        "Demo Mode"
+    ]
+)
+
 auto_refresh = st.sidebar.checkbox(
     "Auto Refresh",
     value=False
@@ -153,87 +146,110 @@ refresh_seconds = st.sidebar.slider(
 
 
 # ============================================================
-# DEMO DATA FUNCTION
+# DEMO MARKET DATA
 # ============================================================
 
 def create_demo_market_data():
 
-    np.random.seed(int(time.time()) % 100000)
+    seed = int(
+        time.time() * 100
+    ) % 1000000
 
-    price = 110000 + np.random.randn() * 100
+    rng = np.random.default_rng(seed)
+
+    base_price = (
+        110000
+        +
+        rng.normal(0, 100)
+    )
 
     prices = []
 
-    current = price
+    current = base_price
 
-    for _ in range(100):
+    for _ in range(150):
 
-        current += np.random.randn() * 25
+        current += rng.normal(
+            0,
+            25
+        )
 
         prices.append(current)
 
-    df = pd.DataFrame({
-        "Close": prices,
-        "Volume": np.random.uniform(
-            100,
-            1000,
-            100
-        )
-    })
+    df = pd.DataFrame(
+        {
+            "Close": prices,
+            "Volume": rng.uniform(
+                100,
+                1000,
+                len(prices)
+            )
+        }
+    )
 
     # --------------------------------------------------------
-    # Order Book
+    # ORDER BOOK TOP 20
     # --------------------------------------------------------
 
-    bid_prices = np.array([
-        price - i * 2
-        for i in range(1, 21)
-    ])
+    bid_prices = np.array(
+        [
+            current - i * 2
+            for i in range(1, 21)
+        ],
+        dtype=float
+    )
 
-    ask_prices = np.array([
-        price + i * 2
-        for i in range(1, 21)
-    ])
+    ask_prices = np.array(
+        [
+            current + i * 2
+            for i in range(1, 21)
+        ],
+        dtype=float
+    )
 
-    bid_volume = np.random.uniform(
+    bid_volume = rng.uniform(
         1,
         100,
         20
     )
 
-    ask_volume = np.random.uniform(
+    ask_volume = rng.uniform(
         1,
         100,
         20
     )
 
-    bids = np.column_stack([
-        bid_prices,
-        bid_volume
-    ])
+    bids = np.column_stack(
+        [
+            bid_prices,
+            bid_volume
+        ]
+    )
 
-    asks = np.column_stack([
-        ask_prices,
-        ask_volume
-    ])
+    asks = np.column_stack(
+        [
+            ask_prices,
+            ask_volume
+        ]
+    )
 
     # --------------------------------------------------------
-    # TRI Levels
+    # TRI LEVELS
     # --------------------------------------------------------
 
     tri_data = {
 
-        "mBody50": price - 350,
-        "mUpper50": price + 800,
-        "mLower50": price - 1100,
+        "mBody50": current - 350,
+        "mUpper50": current + 800,
+        "mLower50": current - 1100,
 
-        "wBody50": price - 150,
-        "wUpper50": price + 450,
-        "wLower50": price - 600,
+        "wBody50": current - 150,
+        "wUpper50": current + 450,
+        "wLower50": current - 600,
 
-        "dBody50": price - 50,
-        "dUpper50": price + 180,
-        "dLower50": price - 220
+        "dBody50": current - 50,
+        "dUpper50": current + 180,
+        "dLower50": current - 220
     }
 
     return (
@@ -245,13 +261,12 @@ def create_demo_market_data():
 
 
 # ============================================================
-# LOAD MARKET DATA
+# LOAD DATA
 # ============================================================
 
 df, bids, asks, tri_data = (
     create_demo_market_data()
 )
-
 
 current_price = float(
     df["Close"].iloc[-1]
@@ -259,64 +274,140 @@ current_price = float(
 
 
 # ============================================================
-# RUN ENGINE
+# MARKET CALCULATIONS
 # ============================================================
 
-result = engine.analyze(
+bid_total = float(
+    np.sum(bids[:, 1])
+)
 
-    df=df,
+ask_total = float(
+    np.sum(asks[:, 1])
+)
 
-    bids=bids,
+total_book_volume = (
+    bid_total +
+    ask_total
+)
 
-    asks=asks,
+obi = (
+    bid_total -
+    ask_total
+) / (
+    total_book_volume +
+    1e-8
+)
 
-    tri_data=tri_data,
-
-    liquidation_volumes=[
-        1000,
-        1500,
-        2500,
-        1200
-    ],
-
-    displayed_vol=float(
-        np.sum(bids[:, 1]) +
-        np.sum(asks[:, 1])
-    ),
-
-    cancelled_vol=500,
-
-    time_exists=15,
-
-    obs_window=60,
-
-    open_interest=500000,
-
-    leverage=5,
-
-    volatility=float(
-        df["Close"]
-        .pct_change()
-        .std()
-    )
+volatility = float(
+    df["Close"]
+    .pct_change()
+    .std()
 )
 
 
 # ============================================================
-# GET RESULTS
+# RUN RESEARCH LAB
 # ============================================================
 
-signal = result["SIGNAL"]
+try:
 
-raw_signal = result["RAW_SIGNAL"]
+    result = research_lab.analyze(
 
-score = result["SCORE"]
+        df=df,
 
-confidence = result["CONFIDENCE"]
+        bids=bids,
 
-features = result["FEATURES"]
+        asks=asks,
 
-risk = result["RISK"]
+        tri_data=tri_data,
+
+        liquidation_volumes=[
+            1000,
+            1500,
+            2500,
+            1200
+        ],
+
+        displayed_vol=(
+            bid_total +
+            ask_total
+        ),
+
+        cancelled_vol=500,
+
+        time_exists=15,
+
+        obs_window=60,
+
+        open_interest=500000,
+
+        leverage=5,
+
+        volatility=volatility
+    )
+
+    engine_error = None
+
+except Exception as e:
+
+    result = None
+    engine_error = str(e)
+
+
+# ============================================================
+# ERROR
+# ============================================================
+
+if engine_error:
+
+    st.error(
+        "Research Lab Engine Error"
+    )
+
+    st.code(
+        engine_error
+    )
+
+    st.stop()
+
+
+# ============================================================
+# RESULTS
+# ============================================================
+
+signal = result.get(
+    "SIGNAL",
+    "WAIT"
+)
+
+raw_signal = result.get(
+    "RAW_SIGNAL",
+    "WAIT"
+)
+
+score = float(
+    result.get(
+        "SCORE",
+        0
+    )
+)
+
+confidence = float(
+    result.get(
+        "CONFIDENCE",
+        0
+    )
+)
+
+features = result.get(
+    "FEATURES",
+    {}
+)
+
+risk = result.get(
+    "RISK",
+    {}
+)
 
 
 # ============================================================
@@ -324,49 +415,51 @@ risk = result["RISK"]
 # ============================================================
 
 st.markdown(
-    "### 📡 LIVE MARKET"
+    "### 📡 MARKET"
 )
 
-col1, col2, col3, col4, col5 = st.columns(5)
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 
-
-with col1:
+with c1:
 
     st.metric(
         "Symbol",
         symbol
     )
 
-
-with col2:
+with c2:
 
     st.metric(
         "Price",
         f"${current_price:,.2f}"
     )
 
-
-with col3:
+with c3:
 
     st.metric(
         "Timeframe",
         timeframe
     )
 
-
-with col4:
+with c4:
 
     st.metric(
-        "ML / Ensemble Score",
+        "Score",
         f"{score:+.3f}"
     )
 
-
-with col5:
+with c5:
 
     st.metric(
         "Confidence",
         f"{confidence:.1f}%"
+    )
+
+with c6:
+
+    st.metric(
+        "OBI",
+        f"{obi:+.3f}"
     )
 
 
@@ -375,19 +468,29 @@ with col5:
 # ============================================================
 
 st.markdown(
-    "### 🎯 FINAL TRADING SIGNAL"
+    "### 🎯 FINAL RESEARCH LAB SIGNAL"
 )
-
 
 if signal == "LONG":
 
     st.markdown(
         f"""
         <div class="signal-long">
-            <div class="small-text">FINAL SIGNAL</div>
-            <div class="big-number">🟢 LONG</div>
-            <div>Confidence: {confidence:.1f}%</div>
-            <div>Score: {score:+.3f}</div>
+            <div class="small-text">
+                RESEARCH LAB FINAL DECISION
+            </div>
+
+            <div class="big-number">
+                🟢 LONG
+            </div>
+
+            <div>
+                Confidence: {confidence:.1f}%
+            </div>
+
+            <div>
+                Score: {score:+.3f}
+            </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -398,10 +501,21 @@ elif signal == "SHORT":
     st.markdown(
         f"""
         <div class="signal-short">
-            <div class="small-text">FINAL SIGNAL</div>
-            <div class="big-number">🔴 SHORT</div>
-            <div>Confidence: {confidence:.1f}%</div>
-            <div>Score: {score:+.3f}</div>
+            <div class="small-text">
+                RESEARCH LAB FINAL DECISION
+            </div>
+
+            <div class="big-number">
+                🔴 SHORT
+            </div>
+
+            <div>
+                Confidence: {confidence:.1f}%
+            </div>
+
+            <div>
+                Score: {score:+.3f}
+            </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -412,10 +526,21 @@ else:
     st.markdown(
         f"""
         <div class="signal-wait">
-            <div class="small-text">FINAL SIGNAL</div>
-            <div class="big-number">🟡 WAIT</div>
-            <div>Confidence: {confidence:.1f}%</div>
-            <div>Score: {score:+.3f}</div>
+            <div class="small-text">
+                RESEARCH LAB FINAL DECISION
+            </div>
+
+            <div class="big-number">
+                🟡 WAIT
+            </div>
+
+            <div>
+                Confidence: {confidence:.1f}%
+            </div>
+
+            <div>
+                Score: {score:+.3f}
+            </div>
         </div>
         """,
         unsafe_allow_html=True
@@ -423,18 +548,51 @@ else:
 
 
 # ============================================================
-# TRI LINE ANALYSIS
+# SIGNAL DETAILS
+# ============================================================
+
+s1, s2, s3 = st.columns(3)
+
+with s1:
+
+    st.metric(
+        "Raw Research Signal",
+        raw_signal
+    )
+
+with s2:
+
+    st.metric(
+        "Final Signal",
+        signal
+    )
+
+with s3:
+
+    st.metric(
+        "Risk Level",
+        risk.get(
+            "Risk_Level",
+            "UNKNOWN"
+        )
+    )
+
+
+# ============================================================
+# TRI LINE
 # ============================================================
 
 st.markdown(
     "### 📐 TRI LINE ANALYSIS"
 )
 
+tri1, tri2, tri3 = st.columns(3)
 
-tri_col1, tri_col2, tri_col3 = st.columns(3)
 
-
-def level_status(price, level):
+def level_status(
+    price,
+    level
+):
 
     if price > level:
         return "ABOVE"
@@ -445,9 +603,11 @@ def level_status(price, level):
     return "AT LEVEL"
 
 
-with tri_col1:
+with tri1:
 
-    st.markdown("#### 🔴 MONTHLY")
+    st.markdown(
+        "#### 🔴 MONTHLY"
+    )
 
     st.metric(
         "Body 50%",
@@ -469,9 +629,11 @@ with tri_col1:
     )
 
 
-with tri_col2:
+with tri2:
 
-    st.markdown("#### 🟢 WEEKLY")
+    st.markdown(
+        "#### 🟢 WEEKLY"
+    )
 
     st.metric(
         "Body 50%",
@@ -493,9 +655,11 @@ with tri_col2:
     )
 
 
-with tri_col3:
+with tri3:
 
-    st.markdown("#### ⚫ DAILY")
+    st.markdown(
+        "#### ⚫ DAILY"
+    )
 
     st.metric(
         "Body 50%",
@@ -521,9 +685,11 @@ with tri_col3:
 # TRI DIRECTION
 # ============================================================
 
-tri_direction = features.get(
-    "TRI_DIRECTION",
-    0
+tri_direction = float(
+    features.get(
+        "TRI_DIRECTION",
+        0
+    )
 )
 
 if tri_direction > 0.25:
@@ -550,64 +716,44 @@ st.info(
 # ============================================================
 
 st.markdown(
-    "### 📚 ORDER BOOK ANALYSIS"
+    "### 📚 LEVEL-2 ORDER BOOK"
 )
 
+ob1, ob2, ob3, ob4 = st.columns(4)
 
-bid_total = np.sum(
-    bids[:, 1]
-)
-
-ask_total = np.sum(
-    asks[:, 1]
-)
-
-obi = (
-    bid_total -
-    ask_total
-) / (
-    bid_total +
-    ask_total +
-    1e-8
-)
-
-
-ob_col1, ob_col2, ob_col3, ob_col4 = st.columns(4)
-
-
-with ob_col1:
+with ob1:
 
     st.metric(
         "Bid Volume",
         f"{bid_total:,.2f}"
     )
 
-
-with ob_col2:
+with ob2:
 
     st.metric(
         "Ask Volume",
         f"{ask_total:,.2f}"
     )
 
-
-with ob_col3:
+with ob3:
 
     st.metric(
         "OBI",
         f"{obi:+.3f}"
     )
 
-
-with ob_col4:
+with ob4:
 
     if obi > 0.15:
+
         ob_signal = "BUY PRESSURE"
 
     elif obi < -0.15:
+
         ob_signal = "SELL PRESSURE"
 
     else:
+
         ob_signal = "BALANCED"
 
     st.metric(
@@ -617,15 +763,16 @@ with ob_col4:
 
 
 # ============================================================
-# ORDER BOOK TABLE
+# ORDER BOOK TABLES
 # ============================================================
 
-book_col1, book_col2 = st.columns(2)
+book1, book2 = st.columns(2)
 
+with book1:
 
-with book_col1:
-
-    st.markdown("#### 🟢 BIDS")
+    st.markdown(
+        "#### 🟢 BIDS — TOP 20"
+    )
 
     bid_df = pd.DataFrame(
         bids,
@@ -636,7 +783,8 @@ with book_col1:
     )
 
     bid_df["Value"] = (
-        bid_df["Price"] *
+        bid_df["Price"]
+        *
         bid_df["Quantity"]
     )
 
@@ -647,9 +795,11 @@ with book_col1:
     )
 
 
-with book_col2:
+with book2:
 
-    st.markdown("#### 🔴 ASKS")
+    st.markdown(
+        "#### 🔴 ASKS — TOP 20"
+    )
 
     ask_df = pd.DataFrame(
         asks,
@@ -660,7 +810,8 @@ with book_col2:
     )
 
     ask_df["Value"] = (
-        ask_df["Price"] *
+        ask_df["Price"]
+        *
         ask_df["Quantity"]
     )
 
@@ -676,55 +827,11 @@ with book_col2:
 # ============================================================
 
 st.markdown(
-    "### 🧠 12-PAPER + TRI FEATURE ENGINE"
+    "### 🧠 12-PAPER RESEARCH ENGINE"
 )
-
-
-feature_rows = []
-
-
-for name, value in features.items():
-
-    feature_rows.append({
-
-        "Feature": name,
-
-        "Value": round(
-            float(value),
-            4
-        ),
-
-        "Direction":
-            "BULLISH"
-            if value > 0.05
-            else
-            "BEARISH"
-            if value < -0.05
-            else
-            "NEUTRAL"
-    })
-
-
-feature_df = pd.DataFrame(
-    feature_rows
-)
-
-
-st.dataframe(
-    feature_df,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-# ============================================================
-# RESEARCH FEATURE COLUMNS
-# ============================================================
-
-c1, c2, c3, c4 = st.columns(4)
-
 
 research_features = [
+
     "HAWKES",
     "BOOK_IMB",
     "TAKER_FLOW",
@@ -739,23 +846,67 @@ research_features = [
     "REWARD_RISK"
 ]
 
+feature_rows = []
+
+for name in research_features:
+
+    value = float(
+        features.get(
+            name,
+            0
+        )
+    )
+
+    if value > 0.05:
+
+        direction = "BULLISH"
+
+    elif value < -0.05:
+
+        direction = "BEARISH"
+
+    else:
+
+        direction = "NEUTRAL"
+
+    feature_rows.append(
+        {
+            "Research Feature": name,
+            "Value": round(
+                value,
+                4
+            ),
+            "Direction": direction
+        }
+    )
+
+
+st.dataframe(
+    pd.DataFrame(
+        feature_rows
+    ),
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# ============================================================
+# RESEARCH FEATURE METRICS
+# ============================================================
+
+cols = st.columns(4)
 
 for index, name in enumerate(
     research_features
 ):
 
-    col = [
-        c1,
-        c2,
-        c3,
-        c4
-    ][index % 4]
+    with cols[index % 4]:
 
-    with col:
-
-        value = features.get(
-            name,
-            0
+        value = float(
+            features.get(
+                name,
+                0
+            )
         )
 
         st.metric(
@@ -765,13 +916,12 @@ for index, name in enumerate(
 
 
 # ============================================================
-# TRI FEATURE COLUMNS
+# TRI FEATURES
 # ============================================================
 
 st.markdown(
     "### 📐 TRI FEATURES"
 )
-
 
 tri_features = [
 
@@ -790,112 +940,101 @@ tri_features = [
     "TRI_DIRECTION"
 ]
 
-
-tri_feature_data = []
-
+tri_rows = []
 
 for name in tri_features:
 
-    tri_feature_data.append({
-
-        "TRI Feature": name,
-
-        "Score": round(
-            features.get(
-                name,
-                0
-            ),
-            4
-        )
-
-    })
+    tri_rows.append(
+        {
+            "TRI Feature": name,
+            "Score": round(
+                float(
+                    features.get(
+                        name,
+                        0
+                    )
+                ),
+                4
+            )
+        }
+    )
 
 
 st.dataframe(
-    pd.DataFrame(tri_feature_data),
+    pd.DataFrame(
+        tri_rows
+    ),
     use_container_width=True,
     hide_index=True
 )
 
 
 # ============================================================
-# RISK ENGINE
+# POWER RISK ENGINE
 # ============================================================
 
 st.markdown(
     "### ⚠️ POWER RISK ENGINE"
 )
 
+r1, r2, r3, r4 = st.columns(4)
 
-risk_col1, risk_col2, risk_col3, risk_col4 = st.columns(4)
-
-
-with risk_col1:
+with r1:
 
     st.metric(
         "LTZ Score",
-        f"{risk['LTZ_Score']:.2f}"
+        f"{risk.get('LTZ_Score', 0):.2f}"
     )
 
-
-with risk_col2:
+with r2:
 
     st.metric(
         "Spoof Score",
-        f"{risk['Spoof_Score']:.2f}"
+        f"{risk.get('Spoof_Score', 0):.2f}"
     )
 
-
-with risk_col3:
+with r3:
 
     st.metric(
         "Squeeze Risk",
-        f"{risk['Squeeze_Risk']:.2f}"
+        f"{risk.get('Squeeze_Risk', 0):.2f}"
     )
 
-
-with risk_col4:
+with r4:
 
     st.metric(
         "Market Risk",
-        f"{risk['Market_Risk']:.2f}"
+        f"{risk.get('Market_Risk', 0):.2f}"
     )
 
 
-st.warning(
-    f"Risk Level: **{risk['Risk_Level']}**"
+risk_level = risk.get(
+    "Risk_Level",
+    "UNKNOWN"
 )
 
-
-# ============================================================
-# RISK INTERPRETATION
-# ============================================================
-
-risk_score = risk["Market_Risk"]
-
-
-if risk_score < 25:
+if risk_level == "LOW":
 
     st.success(
-        "LOW RISK — Market conditions relatively stable."
+        "Risk Level: LOW"
     )
 
-elif risk_score < 50:
+elif risk_level == "MEDIUM":
 
     st.info(
-        "MEDIUM RISK — Monitor order flow and liquidity."
+        "Risk Level: MEDIUM"
     )
 
-elif risk_score < 75:
+elif risk_level == "HIGH":
 
     st.warning(
-        "HIGH RISK — Reduce exposure and wait for confirmation."
+        "Risk Level: HIGH"
     )
 
 else:
 
     st.error(
-        "EXTREME RISK — Engine forces WAIT."
+        f"Risk Level: {risk_level}"
     )
 
 
@@ -907,35 +1046,29 @@ st.markdown(
     "### 🎯 DECISION MATRIX"
 )
 
+decision_df = pd.DataFrame(
+    {
+        "Component": [
 
-decision_df = pd.DataFrame({
+            "TRI Direction",
+            "Order Book",
+            "Research Ensemble",
+            "Confidence",
+            "Risk Engine",
+            "Final Decision"
+        ],
 
-    "Component": [
+        "Value": [
 
-        "TRI Direction",
-        "Order Book",
-        "Research Ensemble",
-        "ML / Score",
-        "Risk Engine",
-        "Final Decision"
-    ],
-
-    "Value": [
-
-        tri_signal,
-
-        ob_signal,
-
-        f"{score:+.3f}",
-
-        f"{confidence:.1f}%",
-
-        risk["Risk_Level"],
-
-        signal
-    ]
-})
-
+            tri_signal,
+            ob_signal,
+            f"{score:+.3f}",
+            f"{confidence:.1f}%",
+            risk_level,
+            signal
+        ]
+    }
+)
 
 st.dataframe(
     decision_df,
@@ -952,25 +1085,21 @@ st.markdown(
     "### 🟢 ENGINE STATUS"
 )
 
+e1, e2, e3 = st.columns(3)
 
-status1, status2, status3 = st.columns(3)
+with e1:
 
+    st.success(
+        "Research Lab: ONLINE"
+    )
 
-with status1:
+with e2:
 
     st.success(
         "TRI Engine: ONLINE"
     )
 
-
-with status2:
-
-    st.success(
-        "Research Engine: ONLINE"
-    )
-
-
-with status3:
+with e3:
 
     st.success(
         "Risk Engine: ONLINE"
@@ -978,11 +1107,11 @@ with status3:
 
 
 # ============================================================
-# JSON OUTPUT
+# RAW JSON
 # ============================================================
 
 with st.expander(
-    "🔧 Raw Engine JSON"
+    "🔧 RAW RESEARCH LAB OUTPUT"
 ):
 
     st.json(
