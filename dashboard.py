@@ -67,7 +67,7 @@ section[data-testid="stSidebar"] {
 # ============================================================
 COINS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-     "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
+    "GRASSUSDT", "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
     "NEARUSDT", "LTCUSDT", "BCHUSDT", "TRXUSDT", "PEPEUSDT",
 ]
 
@@ -1053,58 +1053,13 @@ st.markdown(
         </div>
         <div class="small">
             Live Binance Data • 12-Feature Research Engine •
-            Risk Engine • Paper Trade Tracker • 5m + GRASS
+            Risk Engine • Paper Trade Tracker
         </div>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# ============================================================
-# SHARE BUTTON
-# ============================================================
-# Native Web Share on supported browsers; otherwise copy the
-# current dashboard URL to the clipboard.
-components.html(
-    """
-    <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px 0;">
-      <button id="shareBtn"
-        style="
-          border:1px solid #30384a;
-          border-radius:9px;
-          background:#111622;
-          color:#e2e8f0;
-          padding:8px 14px;
-          font-size:14px;
-          cursor:pointer;
-        ">
-        🔗 Share
-      </button>
-    </div>
-    <script>
-      const btn = document.getElementById("shareBtn");
-      btn.onclick = async () => {
-        const url = window.parent.location.href;
-        try {
-          if (navigator.share) {
-            await navigator.share({
-              title: "Quant Research Trading Terminal",
-              text: "Live Quant Research Trading Terminal",
-              url: url
-            });
-          } else if (navigator.clipboard) {
-            await navigator.clipboard.writeText(url);
-            btn.innerText = "✅ Link Copied";
-            setTimeout(() => btn.innerText = "🔗 Share", 1800);
-          } else {
-            window.prompt("Copy dashboard URL:", url);
-          }
-        } catch (e) {}
-      };
-    </script>
-    """,
-    height=44,
-)
 
 
 # ============================================================
