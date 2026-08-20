@@ -866,11 +866,15 @@ st.sidebar.caption(
 # ============================================================
 # REFRESH
 # ============================================================
-if auto_refresh:
-    st.markdown(
-        '<meta http-equiv="refresh" content="5">',
-        unsafe_allow_html=True
-    )
+# No browser-level hard refresh. This avoids the black-screen flash.
+
+# Streamlit native soft refresh (no full browser reload).
+# It reruns the app without navigating away from the page.
+if auto_refresh and hasattr(st, "fragment"):
+    @st.fragment(run_every="5s")
+    def _refresh_tick():
+        st.empty()
+    _refresh_tick()
 
 
 # ============================================================
@@ -1394,6 +1398,11 @@ st.caption(
 st.markdown("---")
 st.subheader("🏆 Win Rate & Performance")
 
+st.caption(
+    "Win Rate = Wins ÷ (Wins + Losses). Pending trades are NOT included "
+    "in the denominator. Total Trades = Closed + Pending."
+)
+
 stats = trade_statistics(
     st.session_state.trade_history
 )
@@ -1521,13 +1530,39 @@ if not history_df.empty:
         else 0.0
     )
 
+    fpending = int((filtered["outcome"] == "PENDING").sum())
+    ftotal = len(filtered)
+
     st.success(
-        f"Filtered Trades: {len(filtered)} | "
-        f"Closed: {fclosed} | "
-        f"Wins: {fwins} | "
-        f"Losses: {flosses} | "
-        f"Win Rate: {fwinrate:.2f}%"
+        f"Filtered — Total: {ftotal} | Closed: {fclosed} | "
+        f"Pending: {fpending} | Wins: {fwins} | "
+        f"Losses: {flosses} | Win Rate: {fwinrate:.2f}%"
     )
+
+    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+    checker_metrics = [
+        ("TOTAL", ftotal),
+        ("CLOSED", fclosed),
+        ("WINS", fwins),
+        ("LOSSES", flosses),
+        ("WIN RATE", f"{fwinrate:.2f}%"),
+    ]
+    for col, (label, value) in zip(
+        [fc1, fc2, fc3, fc4, fc5], checker_metrics
+    ):
+        with col:
+            cls = "green" if label in {"WINS", "WIN RATE"} else (
+                "red" if label == "LOSSES" else "blue"
+            )
+            st.markdown(
+                f"""
+                <div class="card">
+                    <div class="label">{label}</div>
+                    <div class="value {cls}">{value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 # ============================================================
