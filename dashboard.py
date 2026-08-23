@@ -268,14 +268,27 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if np.isnan(atr_val): 
         atr_val = close_p * 0.005
 
-    beam_level = close_p + (1.8 * atr_val)
-    base_level = close_p - (1.8 * atr_val)
-    tp1_val = close_p + (1.0 * atr_val) if final_score >= 0 else close_p - (1.0 * atr_val)
-    tp2_val = beam_level if final_score >= 0 else base_level
-    sl_val = close_p - (1.0 * atr_val) if final_score >= 0 else close_p + (1.0 * atr_val)
-
     direction = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
     confidence = int(min(max(abs(final_score) * 100, 15), 98))
+
+    # --- Risk to Reward Calculation (1:2 TP1 and 1:3 TP2) ---
+    risk_distance = 1.0 * atr_val  # Risk (SL distance)
+
+    if direction == "LONG":
+        sl_val = close_p - risk_distance
+        tp1_val = close_p + (2.0 * risk_distance)  # 1:2 R:R
+        tp2_val = close_p + (3.0 * risk_distance)  # 1:3 R:R
+    elif direction == "SHORT":
+        sl_val = close_p + risk_distance
+        tp1_val = close_p - (2.0 * risk_distance)  # 1:2 R:R
+        tp2_val = close_p - (3.0 * risk_distance)  # 1:3 R:R
+    else:
+        sl_val = close_p - risk_distance
+        tp1_val = close_p + (2.0 * risk_distance)
+        tp2_val = close_p + (3.0 * risk_distance)
+
+    beam_level = tp2_val
+    base_level = sl_val
 
     lock_seconds = tf_minutes * 60
     current_time_sec = int(time.time())
@@ -308,16 +321,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
-    # --- BUG FIX: Check all pending trades using their respective latest market price ---
+    # --- Check all pending trades using their respective latest market price ---
     for trade in st.session_state.trade_history_log:
         if trade["outcome"] == "PENDING":
             trade_symbol = trade["symbol"]
             
-            # Fetch latest price for this specific trade's symbol if it's different from current view
             if trade_symbol == selected_symbol:
                 curr_high, curr_low, curr_close = high_p, low_p, close_p
             else:
-                # Quick fetch for other coin symbols in history
                 temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=5)
                 if not temp_df.empty:
                     curr_high = temp_df["High"].iloc[-1]
@@ -328,10 +339,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
             entry = trade["entry_price"]
             sl = trade["stop_loss"]
-            tp = trade["tp1"]
+            tp = trade["tp1"] # Primary target check for win/loss evaluation
             
             if trade["direction"] == "LONG":
-                # Check if High hit TP or Low hit SL
                 if curr_high >= tp:
                     trade["outcome"] = "WIN"
                     trade["exit_price"] = tp
@@ -343,7 +353,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                     trade["pnl_percent"] = round(((sl - entry) / entry) * 100, 2)
                     trade["status"] = "Closed"
             elif trade["direction"] == "SHORT":
-                # Check if Low hit TP or High hit SL
                 if curr_low <= tp:
                     trade["outcome"] = "WIN"
                     trade["exit_price"] = tp
@@ -391,15 +400,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             <div class="metric-label">Signal Execution Panel</div>
             <div style="font-size:22px; font-weight:700; color:{dir_color};">{direction}</div>
             <div style="font-size:11px; color:#8b949e; margin-top:4px;">Entry: ${close_p:,.2f} | SL: ${sl_val:,.2f}</div>
-            <div style="font-size:11px; color:#38bdf8;">TP1: ${tp1_val:,.2f} | TP2: ${tp2_val:,.2f}</div>
+            <div style="font-size:11px; color:#38bdf8;">TP1 (1:2): ${tp1_val:,.2f} | TP2 (1:3): ${tp2_val:,.2f}</div>
         </div>
         """, unsafe_allow_html=True)
 
     with col_m1:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">BEAM Target</div><div class="metric-val-blue">${beam_level:,.2f}</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="metric-card"><div class="metric-label">BASE Target</div><div class="metric-val-red">${base_level:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">TP1 Target (1:2)</div><div class="metric-val-blue">${tp1_val:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">TP2 Target (1:3)</div><div class="metric-val-blue">${tp2_val:,.2f}</div></div>', unsafe_allow_html=True)
     with col_m2:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Risk / Reward</div><div class="metric-val-blue">1 : 2.15</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Risk / Reward</div><div class="metric-val-blue">1 : 2.5 (Avg)</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="metric-card"><div class="metric-label">Signal Strength</div><div class="metric-val-green">HIGH</div></div>', unsafe_allow_html=True)
     with col_m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">LTZ Score</div><div class="metric-val-blue">{risk_metrics["LTZ_Score"]:.2f}</div></div>', unsafe_allow_html=True)
@@ -419,17 +428,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         t_steps = np.linspace(0, np.pi / 2, forecast_horizon)
 
         if direction == "LONG":
-            forecast_prices = close_p + (beam_level - close_p) * np.sin(t_steps)
+            forecast_prices = close_p + (tp2_val - close_p) * np.sin(t_steps)
         elif direction == "SHORT":
-            forecast_prices = close_p - (close_p - base_level) * np.sin(t_steps)
+            forecast_prices = close_p - (close_p - tp2_val) * np.sin(t_steps)
         else:
             forecast_prices = [close_p] * forecast_horizon
 
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df["Time"], open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Candles", increasing_line_color="#00e676", decreasing_line_color="#ff5252"))
         fig.add_trace(go.Scatter(x=[df["Time"].iloc[-1]] + future_times, y=[close_p] + list(forecast_prices), mode="lines+markers", name="Trajectory", line=dict(color=dir_color, width=2, dash="dot")))
-        fig.add_hline(y=beam_level, line_dash="dash", line_color="#00e676", annotation_text=f"BEAM: ${beam_level:,.2f}")
-        fig.add_hline(y=base_level, line_dash="dash", line_color="#ff5252", annotation_text=f"BASE: ${base_level:,.2f}")
+        fig.add_hline(y=tp2_val, line_dash="dash", line_color="#00e676", annotation_text=f"TP2 (1:3): ${tp2_val:,.2f}")
+        fig.add_hline(y=tp1_val, line_dash="dash", line_color="#38bdf8", annotation_text=f"TP1 (1:2): ${tp1_val:,.2f}")
         fig.add_hline(y=sl_val, line_dash="dot", line_color="#ff5252", annotation_text=f"SL: ${sl_val:,.2f}")
         fig.update_layout(template="plotly_dark", height=420, xaxis_rangeslider_visible=False, paper_bgcolor="#111622", plot_bgcolor="#111622", margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
@@ -543,7 +552,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Net PnL %</div><div style="font-size:18px; font-weight:700; color:{pnl_color};">{net_pnl:+.2f}%</div></div>', unsafe_allow_html=True)
 
         st.markdown("##### Detailed Trade History Table")
-        display_cols = ["timestamp", "symbol", "timeframe", "direction", "entry_price", "stop_loss", "tp1", "exit_price", "pnl_percent", "outcome", "confidence"]
+        display_cols = ["timestamp", "symbol", "timeframe", "direction", "entry_price", "stop_loss", "tp1", "tp2", "exit_price", "pnl_percent", "outcome", "confidence"]
         st.dataframe(filtered_df[display_cols], use_container_width=True, hide_index=True, height=280)
 
         if st.sidebar.button("Clear Trade History Log"):
@@ -556,4 +565,3 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
 else:
     st.warning("⚠️ Data pipeline initializing or connection restricted. Please refresh.")
-    
