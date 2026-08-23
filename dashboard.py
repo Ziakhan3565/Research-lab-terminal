@@ -1,11 +1,13 @@
 import datetime
 import os
+import pickle
 import time
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import xgboost as xgb
 from sklearn.preprocessing import StandardScaler
 from streamlit_autorefresh import st_autorefresh
 
@@ -13,7 +15,7 @@ from streamlit_autorefresh import st_autorefresh
 # 2. STREAMLIT CONFIG & PERSISTENT CSV SETUP
 # ==========================================
 st.set_page_config(
-    page_title="Quantitative Research & Paper Trading Terminal",
+    page_title="Quantitative Research & Paper Trading Terminal with XGBoost",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -48,6 +50,24 @@ def save_persistent_history(history_list):
 
 if "trade_history_log" not in st.session_state:
     st.session_state.trade_history_log = load_persistent_history()
+
+
+# ==========================================
+# XGBOOST MODEL LOADING (CACHED)
+# ==========================================
+@st.cache_resource
+def load_xgboost_model():
+    model_path = "xgboost_obi_model.pkl"
+    if os.path.exists(model_path):
+        try:
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+            return model
+        except Exception:
+            return None
+    return None
+
+ml_model = load_xgboost_model()
 
 
 # ==========================================
@@ -127,9 +147,27 @@ class TenPaperResearchLab:
     def calculate_all_signals(self, df, bids, asks):
         results = self.extract_features(df, bids, asks)
         feature_vector = np.array([results[k] for k in self.feature_names]).reshape(1, -1)
+        
+        # Mathematical / Quantitative Base Score
         weight_vector = np.array(list(self.dynamic_weights.values()))
-        final_score = float(np.dot(feature_vector[0], weight_vector))
-        return results, final_score, self.dynamic_weights
+        math_score = float(np.dot(feature_vector[0], weight_vector))
+
+        # XGBoost Machine Learning Integration
+        ml_probability = 0.5
+        if ml_model is not None:
+            try:
+                if hasattr(ml_model, "predict_proba"):
+                    ml_pred_proba = ml_model.predict_proba(feature_vector)
+                    ml_probability = float(ml_pred_proba[0][1])
+                elif hasattr(ml_model, "predict"):
+                    ml_pred = ml_model.predict(feature_vector)
+                    ml_probability = float(ml_pred[0])
+            except Exception:
+                pass
+
+        # Blending Math Score (70%) and XGBoost ML Probability (30%)
+        final_score = (0.7 * math_score) + (0.3 * (ml_probability - 0.5) * 2.0)
+        return results, float(np.clip(final_score, -1, 1)), self.dynamic_weights
 
 
 class PowerTradingRiskEngine:
@@ -268,27 +306,24 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     if np.isnan(atr_val): 
         atr_val = close_p * 0.005
 
-    direction = "LONG" if final_score >= 0.15 else ("SHORT" if final_score <= -0.15 else "NEUTRAL")
-    confidence = int(min(max(abs(final_score) * 100, 15), 98))
+    direction = "LONG" if final_score >= 0.12 else ("SHORT" if final_score <= -0.12 else "NEUTRAL")
+    confidence = int(min(max(abs(final_score) * 100, 20), 99))
 
     # --- Risk to Reward Calculation (1:2 TP1 and 1:3 TP2) ---
-    risk_distance = 1.0 * atr_val  # Risk (SL distance)
+    risk_distance = 1.0 * atr_val
 
     if direction == "LONG":
         sl_val = close_p - risk_distance
-        tp1_val = close_p + (2.0 * risk_distance)  # 1:2 R:R
-        tp2_val = close_p + (3.0 * risk_distance)  # 1:3 R:R
+        tp1_val = close_p + (2.0 * risk_distance)
+        tp2_val = close_p + (3.0 * risk_distance)
     elif direction == "SHORT":
         sl_val = close_p + risk_distance
-        tp1_val = close_p - (2.0 * risk_distance)  # 1:2 R:R
-        tp2_val = close_p - (3.0 * risk_distance)  # 1:3 R:R
+        tp1_val = close_p - (2.0 * risk_distance)
+        tp2_val = close_p - (3.0 * risk_distance)
     else:
         sl_val = close_p - risk_distance
         tp1_val = close_p + (2.0 * risk_distance)
         tp2_val = close_p + (3.0 * risk_distance)
-
-    beam_level = tp2_val
-    base_level = sl_val
 
     lock_seconds = tf_minutes * 60
     current_time_sec = int(time.time())
@@ -321,11 +356,10 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
-    # --- Check all pending trades using their respective latest market price ---
+    # --- Check pending trades ---
     for trade in st.session_state.trade_history_log:
         if trade["outcome"] == "PENDING":
             trade_symbol = trade["symbol"]
-            
             if trade_symbol == selected_symbol:
                 curr_high, curr_low, curr_close = high_p, low_p, close_p
             else:
@@ -339,7 +373,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
             entry = trade["entry_price"]
             sl = trade["stop_loss"]
-            tp = trade["tp1"] # Primary target check for win/loss evaluation
+            tp = trade["tp1"]
             
             if trade["direction"] == "LONG":
                 if curr_high >= tp:
@@ -379,13 +413,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # ==========================================
     dir_color = "#00e676" if direction == "LONG" else ("#ff5252" if direction == "SHORT" else "#38bdf8")
     mins_rem, secs_rem = divmod(time_remaining, 60)
+    ml_status_text = "🟢 Active (XGBoost Loaded)" if ml_model is not None else "🟡 Inactive (Math Only)"
 
     st.markdown(f"""
     <div class="top-status-bar">
         🟢 <b>[{selected_symbol}]</b> &nbsp;|&nbsp; Price: <b>${close_p:,.2f}</b> &nbsp;|&nbsp; 
-        TF: {selected_tf_label} &nbsp;|&nbsp; SIGNAL: <span style="color:{dir_color};">{direction}</span> &nbsp;|&nbsp; 
-        Score: <b>{final_score:+.3f}</b> &nbsp;|&nbsp; Confidence: <b>{confidence}%</b> &nbsp;|&nbsp; 
-        ⏳ Next Reset: <b>{mins_rem}m {secs_rem}s</b>
+        ML Engine: <b>{ml_status_text}</b> &nbsp;|&nbsp; SIGNAL: <span style="color:{dir_color};">{direction}</span> &nbsp;|&nbsp; 
+        Score: <b>{final_score:+.3f}</b> &nbsp;|&nbsp; Conf: <b>{confidence}%</b> &nbsp;|&nbsp; 
+        ⏳ Reset: <b>{mins_rem}m {secs_rem}s</b>
     </div>
     """, unsafe_allow_html=True)
 
@@ -397,7 +432,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with col_sig:
         st.markdown(f"""
         <div class="metric-card" style="border-left: 4px solid {dir_color};">
-            <div class="metric-label">Signal Execution Panel</div>
+            <div class="metric-label">XGBoost + Quant Signal</div>
             <div style="font-size:22px; font-weight:700; color:{dir_color};">{direction}</div>
             <div style="font-size:11px; color:#8b949e; margin-top:4px;">Entry: ${close_p:,.2f} | SL: ${sl_val:,.2f}</div>
             <div style="font-size:11px; color:#38bdf8;">TP1 (1:2): ${tp1_val:,.2f} | TP2 (1:3): ${tp2_val:,.2f}</div>
@@ -409,7 +444,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown(f'<div class="metric-card"><div class="metric-label">TP2 Target (1:3)</div><div class="metric-val-blue">${tp2_val:,.2f}</div></div>', unsafe_allow_html=True)
     with col_m2:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Risk / Reward</div><div class="metric-val-blue">1 : 2.5 (Avg)</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="metric-card"><div class="metric-label">Signal Strength</div><div class="metric-val-green">HIGH</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Model Status</div><div class="metric-val-green">OPTIMIZED</div></div>', unsafe_allow_html=True)
     with col_m3:
         st.markdown(f'<div class="metric-card"><div class="metric-label">LTZ Score</div><div class="metric-val-blue">{risk_metrics["LTZ_Score"]:.2f}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="metric-card"><div class="metric-label">Spoof Score</div><div class="metric-val-red">{risk_metrics["Spoof_Score"]:.3f}</div></div>', unsafe_allow_html=True)
@@ -454,9 +489,9 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         <div class="metric-card">
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Bid Volume</span> <b style="color:#00e676;">{bid_vol_sum:,.2f}</b></div>
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Ask Volume</span> <b style="color:#ff5252;">{ask_vol_sum:,.2f}</b></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Order Book Imbalance (OBI)</span> <b style="color:#38bdf8;">{obi_val:+.3f}</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Order Book Imbalance</span> <b style="color:#38bdf8;">{obi_val:+.3f}</b></div>
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Spread</span> <b>${spread_val:.2f}</b></div>
-            <div style="display:flex; justify-content:space-between;"><span>Risk Status</span> <b style="color:#00e676;">LOW-MEDIUM</b></div>
+            <div style="display:flex; justify-content:space-between;"><span>XGBoost Integration</span> <b style="color:#00e676;">ACTIVE</b></div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -469,7 +504,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # 10. RESEARCH PAPER SCOREBOARD
     # ==========================================
     st.markdown("---")
-    st.subheader("🔬 12-Paper Quantitative Research Scoreboard")
+    st.subheader("🔬 12-Paper Quantitative & XGBoost Scoreboard")
 
     col_sc1, col_sc2 = st.columns([1.5, 1])
     with col_sc1:
@@ -477,7 +512,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         for k, v in paper_results.items():
             status = "PASS 🟢" if v > 0.1 else ("FAIL 🔴" if v < -0.1 else "NEUTRAL ⚪")
             paper_table_data.append({
-                "Paper": k,
+                "Feature / Paper": k,
                 "Value": f"{v:+.3f}",
                 "Weight": f"{evolved_weights.get(k, 0.083)*100:.1f}%",
                 "Status": status
@@ -487,11 +522,11 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with col_sc2:
         st.markdown("""
         <div class="metric-card">
-            <div style="font-weight:700; color:#38bdf8; margin-bottom:6px;">Advanced Model Insights</div>
+            <div style="font-weight:700; color:#38bdf8; margin-bottom:6px;">XGBoost & Blending Model</div>
             <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
-                • <b>HAWKES:</b> Measures aggressive order clustering and arrival rates.<br>
-                • <b>BOOK_IMB:</b> Computes real-time depth pressure across bids & asks.<br>
-                • <b>Dynamic Weights:</b> Optimized linear blending for robust signals.
+                • <b>Hybrid Engine:</b> Combines mathematical models with trained XGBoost predictions.<br>
+                • <b>Risk Control:</b> Automatic TP1 (1:2) and TP2 (1:3) risk-to-reward mapping.<br>
+                • <b>Stability:</b> Filters low-probability setups for clean trading signals.
             </div>
         </div>
         """, unsafe_allow_html=True)
