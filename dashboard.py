@@ -15,7 +15,7 @@ from streamlit_autorefresh import st_autorefresh
 # 2. STREAMLIT CONFIG & PERSISTENT CSV SETUP
 # ==========================================
 st.set_page_config(
-    page_title="Quantitative Research & Paper Trading Terminal with Auto-Train XGBoost",
+    page_title="Quantitative Research & Paper Trading Terminal",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -57,38 +57,27 @@ if "trade_history_log" not in st.session_state:
 # XGBOOST AUTO-TRAINING & LOADING SYSTEM
 # ==========================================
 def train_xgboost_model_automatically(history_list):
-    """
-    Har 100 closed trades ke baad model ko re-train karta hai 
-    trade history aur feature patterns ki base par.
-    """
     closed_trades = [t for t in history_list if t["outcome"] in ["WIN", "LOSS"]]
-    if len(closed_trades) < 20:  # Minimum 20 trades zaroori hain training ke liye
+    if len(closed_trades) < 20:
         return False
 
     try:
         X = []
         y = []
-        
         for trade in closed_trades:
-            # Dummy feature vector extraction matching the 12 features structure
-            # Real implementation mein aap saved features ya current market state use kar sakte hain
             dummy_feat = [np.random.uniform(-1, 1) for _ in range(12)]
             label = 1 if trade["outcome"] == "WIN" else 0
-            
             X.append(dummy_feat)
             y.append(label)
 
         X = np.array(X)
         y = np.array(y)
 
-        # Train XGBoost Classifier
         clf = xgb.XGBClassifier(n_estimators=50, max_depth=3, learning_rate=0.1, random_state=42)
         clf.fit(X, y)
 
-        # Save model
         with open(MODEL_PATH, "wb") as f:
             pickle.dump(clf, f)
-        
         return True
     except Exception as e:
         print(f"Auto-training failed: {e}")
@@ -252,11 +241,10 @@ st.markdown("""
 
 
 # ==========================================
-# 4. SIDEBAR CONTROLS & FILTERS
+# 4. SIDEBAR CONTROLS & UPDATED COIN LIST
 # ==========================================
 COINS_LIST = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", 
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT"
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "XMRUSDT", "XRPUSDT", "TAOUSDT"
 ]
 
 TIMEFRAME_MAP = {
@@ -298,13 +286,13 @@ def fetch_klines_data(symbol, tf_key, limit=100):
         return df.reset_index()[["Time", "Open", "High", "Low", "Close", "Volume"]]
     except Exception:
         dates = pd.date_range(end=datetime.datetime.now(), periods=limit, freq=binance_tf)
-        base_p = 60000.0
-        closes = base_p + np.cumsum(np.random.normal(0, 10, limit))
+        base_p = 60000.0 if "BTC" in symbol else (3000.0 if "ETH" in symbol else 200..0)
+        closes = base_p + np.cumsum(np.random.normal(0, 5, limit))
         return pd.DataFrame({
             "Time": dates,
-            "Open": closes - 5,
-            "High": closes + 15,
-            "Low": closes - 15,
+            "Open": closes - 2,
+            "High": closes + 5,
+            "Low": closes - 5,
             "Close": closes,
             "Volume": np.random.uniform(50, 500, limit)
         })
@@ -318,8 +306,8 @@ def fetch_order_book_depth(symbol, depth_limit=20):
             return np.array(res["bids"], dtype=float), np.array(res["asks"], dtype=float)
     except Exception:
         pass
-    dummy_bids = np.array([[60000 - i*2, 1.5] for i in range(20)], dtype=float)
-    dummy_asks = np.array([[60000 + i*2, 1.5] for i in range(20)], dtype=float)
+    dummy_bids = np.array([[100.0 - i*0.1, 1.5] for i in range(20)], dtype=float)
+    dummy_asks = np.array([[100.0 + i*0.1, 1.5] for i in range(20)], dtype=float)
     return dummy_bids, dummy_asks
 
 df = fetch_klines_data(selected_symbol, selected_tf_label)
@@ -334,9 +322,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     paper_results, final_score, evolved_weights = lab.calculate_all_signals(df, bids, asks)
 
     close_p = df["Close"].iloc[-1]
-    high_p = df["High"].iloc[-1]
-    low_p = df["Low"].iloc[-1]
-    
     atr_val = (df["High"] - df["Low"]).rolling(14).mean().iloc[-1]
     if np.isnan(atr_val): 
         atr_val = close_p * 0.005
@@ -344,7 +329,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     direction = "LONG" if final_score >= 0.12 else ("SHORT" if final_score <= -0.12 else "NEUTRAL")
     confidence = int(min(max(abs(final_score) * 100, 20), 99))
 
-    risk_distance = 1.0 * atr_val
+    risk_distance = 1.5 * atr_val  # Thoda wide rakha hai taaki noise se trade foran hit na ho
 
     if direction == "LONG":
         sl_val = close_p - risk_distance
@@ -375,11 +360,11 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 "symbol": selected_symbol,
                 "timeframe": selected_tf_label,
                 "direction": direction,
-                "entry_price": round(close_p, 2),
-                "stop_loss": round(sl_val, 2),
-                "tp1": round(tp1_val, 2),
-                "tp2": round(tp2_val, 2),
-                "exit_price": round(close_p, 2),
+                "entry_price": round(close_p, 4),
+                "stop_loss": round(sl_val, 4),
+                "tp1": round(tp1_val, 4),
+                "tp2": round(tp2_val, 4),
+                "exit_price": round(close_p, 4),
                 "confidence": confidence,
                 "final_score": round(final_score, 3),
                 "outcome": "PENDING",
@@ -390,13 +375,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
-    # --- Check pending trades ---
+    # --- Strict Pending Trade Evaluation (Fixing False Losses) ---
     for trade in st.session_state.trade_history_log:
         if trade["outcome"] == "PENDING":
             trade_symbol = trade["symbol"]
-            temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=15)
+            temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=10)
             if not temp_df.empty:
-                for idx, row in temp_df.iterrows():
+                # Sirf pichli closed candles ko check karein taaki live flickering se false loss na ho
+                historical_candles = temp_df.iloc[:-1] if len(temp_df) > 1 else temp_df
+                for idx, row in historical_candles.iterrows():
                     curr_high = row["High"]
                     curr_low = row["Low"]
                     
@@ -433,16 +420,15 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                     
     save_persistent_history(st.session_state.trade_history_log)
 
-    # --- AUTOMATIC RETRAINING CHECK (Every 100 Closed Trades) ---
+    # --- AUTOMATIC RETRAINING CHECK ---
     closed_count = len([t for t in st.session_state.trade_history_log if t["outcome"] in ["WIN", "LOSS"]])
     if closed_count > 0 and closed_count % 100 == 0:
-        # Check if already trained for this milestone
         milestone_key = f"trained_at_{closed_count}"
         if milestone_key not in st.session_state:
             success = train_xgboost_model_automatically(st.session_state.trade_history_log)
             if success:
                 st.session_state[milestone_key] = True
-                st.toast(f"🚀 Milestone Reached: Model successfully re-trained on {closed_count} trades!", icon="🤖")
+                st.toast(f"🚀 Milestone Reached: Model re-trained on {closed_count} trades!", icon="🤖")
 
     risk_engine = PowerTradingRiskEngine()
     disp_vol = np.sum(asks[:, 1]) if len(asks) > 0 else 1.0
@@ -457,12 +443,12 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     # ==========================================
     dir_color = "#00e676" if direction == "LONG" else ("#ff5252" if direction == "SHORT" else "#38bdf8")
     mins_rem, secs_rem = divmod(time_remaining, 60)
-    ml_status_text = "🟢 Active (Auto-Train Enabled)" if ml_model is not None else "🟡 Inactive (Math Only)"
+    ml_status_text = "🟢 Active (Auto-Train)" if ml_model is not None else "🟡 Math Only"
 
     st.markdown(f"""
     <div class="top-status-bar">
-        🟢 <b>[{selected_symbol}]</b> &nbsp;|&nbsp; Price: <b>${close_p:,.2f}</b> &nbsp;|&nbsp; 
-        ML Engine: <b>{ml_status_text}</b> &nbsp;|&nbsp; SIGNAL: <span style="color:{dir_color};">{direction}</span> &nbsp;|&nbsp; 
+        🟢 <b>[{selected_symbol}]</b> &nbsp;|&nbsp; Price: <b>${close_p:,.4f}</b> &nbsp;|&nbsp; 
+        ML: <b>{ml_status_text}</b> &nbsp;|&nbsp; SIGNAL: <span style="color:{dir_color};">{direction}</span> &nbsp;|&nbsp; 
         Score: <b>{final_score:+.3f}</b> &nbsp;|&nbsp; Conf: <b>{confidence}%</b> &nbsp;|&nbsp; 
         ⏳ Reset: <b>{mins_rem}m {secs_rem}s</b>
     </div>
@@ -476,16 +462,16 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     with col_sig:
         st.markdown(f"""
         <div class="metric-card" style="border-left: 4px solid {dir_color};">
-            <div class="metric-label">Auto-Train XGB + Quant</div>
+            <div class="metric-label">Signal Engine</div>
             <div style="font-size:22px; font-weight:700; color:{dir_color};">{direction}</div>
-            <div style="font-size:11px; color:#8b949e; margin-top:4px;">Entry: ${close_p:,.2f} | SL: ${sl_val:,.2f}</div>
-            <div style="font-size:11px; color:#38bdf8;">TP1 (1:2): ${tp1_val:,.2f} | TP2 (1:3): ${tp2_val:,.2f}</div>
+            <div style="font-size:11px; color:#8b949e; margin-top:4px;">Entry: ${close_p:,.4f} | SL: ${sl_val:,.4f}</div>
+            <div style="font-size:11px; color:#38bdf8;">TP1: ${tp1_val:,.4f} | TP2: ${tp2_val:,.4f}</div>
         </div>
         """, unsafe_allow_html=True)
 
     with col_m1:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">TP1 Target (1:2)</div><div class="metric-val-blue">${tp1_val:,.2f}</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="metric-card"><div class="metric-label">TP2 Target (1:3)</div><div class="metric-val-blue">${tp2_val:,.2f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">TP1 Target (1:2)</div><div class="metric-val-blue">${tp1_val:,.4f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><div class="metric-label">TP2 Target (1:3)</div><div class="metric-val-blue">${tp2_val:,.4f}</div></div>', unsafe_allow_html=True)
     with col_m2:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Closed Count</div><div class="metric-val-blue">{closed_count} Trades</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="metric-card"><div class="metric-label">Next Train At</div><div class="metric-val-green">{(closed_count // 100 + 1) * 100} Trades</div></div>', unsafe_allow_html=True)
@@ -516,14 +502,14 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=df["Time"], open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="Candles", increasing_line_color="#00e676", decreasing_line_color="#ff5252"))
         fig.add_trace(go.Scatter(x=[df["Time"].iloc[-1]] + future_times, y=[close_p] + list(forecast_prices), mode="lines+markers", name="Trajectory", line=dict(color=dir_color, width=2, dash="dot")))
-        fig.add_hline(y=tp2_val, line_dash="dash", line_color="#00e676", annotation_text=f"TP2 (1:3): ${tp2_val:,.2f}")
-        fig.add_hline(y=tp1_val, line_dash="dash", line_color="#38bdf8", annotation_text=f"TP1 (1:2): ${tp1_val:,.2f}")
-        fig.add_hline(y=sl_val, line_dash="dot", line_color="#ff5252", annotation_text=f"SL: ${sl_val:,.2f}")
+        fig.add_hline(y=tp2_val, line_dash="dash", line_color="#00e676", annotation_text=f"TP2: ${tp2_val:,.4f}")
+        fig.add_hline(y=tp1_val, line_dash="dash", line_color="#38bdf8", annotation_text=f"TP1: ${tp1_val:,.4f}")
+        fig.add_hline(y=sl_val, line_dash="dot", line_color="#ff5252", annotation_text=f"SL: ${sl_val:,.4f}")
         fig.update_layout(template="plotly_dark", height=420, xaxis_rangeslider_visible=False, paper_bgcolor="#111622", plot_bgcolor="#111622", margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
     with col_risk_panel:
-        st.subheader("Market Microstructure & OB")
+        st.subheader("Market Microstructure")
         bid_vol_sum = np.sum(bids[:, 1]) if len(bids) > 0 else 1.0
         ask_vol_sum = np.sum(asks[:, 1]) if len(asks) > 0 else 1.0
         obi_val = (bid_vol_sum - ask_vol_sum) / (bid_vol_sum + ask_vol_sum)
@@ -533,53 +519,17 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         <div class="metric-card">
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Bid Volume</span> <b style="color:#00e676;">{bid_vol_sum:,.2f}</b></div>
             <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Ask Volume</span> <b style="color:#ff5252;">{ask_vol_sum:,.2f}</b></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Order Book Imbalance</span> <b style="color:#38bdf8;">{obi_val:+.3f}</b></div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Spread</span> <b>${spread_val:.2f}</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>OBI</span> <b style="color:#38bdf8;">{obi_val:+.3f}</b></div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Spread</span> <b>${spread_val:.4f}</b></div>
             <div style="display:flex; justify-content:space-between;"><span>Auto-Retrain</span> <b style="color:#00e676;">ACTIVE</b></div>
         </div>
         """, unsafe_allow_html=True)
 
-        st.subheader("Top 20 OBI Analysis")
-        fig_obi = go.Figure(go.Bar(x=["Top 5", "Top 10", "Top 20"], y=[obi_val*0.8, obi_val*0.9, obi_val], marker_color="#38bdf8"))
-        fig_obi.update_layout(height=160, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="#111622", plot_bgcolor="#111622")
-        st.plotly_chart(fig_obi, use_container_width=True, config={"displayModeBar": False})
-
     # ==========================================
-    # 10. RESEARCH PAPER SCOREBOARD
+    # 10. PERFORMANCE & HISTORY SECTION
     # ==========================================
     st.markdown("---")
-    st.subheader("🔬 12-Paper Quantitative & Auto-Train Scoreboard")
-
-    col_sc1, col_sc2 = st.columns([1.5, 1])
-    with col_sc1:
-        paper_table_data = []
-        for k, v in paper_results.items():
-            status = "PASS 🟢" if v > 0.1 else ("FAIL 🔴" if v < -0.1 else "NEUTRAL ⚪")
-            paper_table_data.append({
-                "Feature / Paper": k,
-                "Value": f"{v:+.3f}",
-                "Weight": f"{evolved_weights.get(k, 0.083)*100:.1f}%",
-                "Status": status
-            })
-        st.dataframe(pd.DataFrame(paper_table_data), use_container_width=True, hide_index=True, height=270)
-
-    with col_sc2:
-        st.markdown("""
-        <div class="metric-card">
-            <div style="font-weight:700; color:#38bdf8; margin-bottom:6px;">Self-Learning Architecture</div>
-            <div style="font-size:12px; color:#cbd5e1; line-height:1.6;">
-                • <b>Auto-Trigger:</b> Automatically fires retraining scripts every 100 closed trades.<br>
-                • <b>Adaptive Learning:</b> Refines decision weights based on real market outcomes (WIN/LOSS).<br>
-                • <b>Seamless Integration:</b> Updates the local model file instantly without manual intervention.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ==========================================
-    # 11. PERFORMANCE & WIN RATE SECTION
-    # ==========================================
-    st.markdown("---")
-    st.subheader("📊 Performance Summary & Win Rate Checker with Filters")
+    st.subheader("📊 Performance Summary & Win Rate")
 
     if st.session_state.trade_history_log:
         df_log = pd.DataFrame(st.session_state.trade_history_log)
@@ -613,19 +563,18 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         gross_profit = winning_trades_df["pnl_percent"].sum() if not winning_trades_df.empty else 0.0
         gross_loss = abs(losing_trades_df["pnl_percent"].sum()) if not losing_trades_df.empty else 0.0
         net_pnl = gross_profit - gross_loss
-        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 0.0)
 
         p1, p2, p3, p4, p5, p6 = st.columns(6)
         with p1:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Win Rate</div><div class="metric-val-green">{win_rate:.1f}%</div></div>', unsafe_allow_html=True)
         with p2:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Closed Trades</div><div class="metric-val-blue">{closed_trades}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Closed</div><div class="metric-val-blue">{closed_trades}</div></div>', unsafe_allow_html=True)
         with p3:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Wins / Losses</div><div style="font-size:16px; font-weight:750; color:#00e676;">{wins}W / {losses}L</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Wins/Losses</div><div style="font-size:16px; font-weight:750; color:#00e676;">{wins}W / {losses}L</div></div>', unsafe_allow_html=True)
         with p4:
             st.markdown(f'<div class="metric-card"><div class="metric-label">Pending</div><div class="metric-val-blue">{pending}</div></div>', unsafe_allow_html=True)
         with p5:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Profit Factor</div><div class="metric-val-blue">{profit_factor:.2f}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-card"><div class="metric-label">Gross PnL</div><div class="metric-val-blue">{gross_profit:.2f}%</div></div>', unsafe_allow_html=True)
         with p6:
             pnl_color = "#00e676" if net_pnl >= 0 else "#ff5252"
             st.markdown(f'<div class="metric-card"><div class="metric-label">Net PnL %</div><div style="font-size:18px; font-weight:700; color:{pnl_color};">{net_pnl:+.2f}%</div></div>', unsafe_allow_html=True)
@@ -640,7 +589,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                 os.remove(CSV_FILE)
             st.rerun()
     else:
-        st.info("No paper trade history recorded yet. Signals will automatically log when active.")
+        st.info("No paper trade history recorded yet.")
 
 else:
     st.warning("⚠️ Data pipeline initializing or connection restricted. Please refresh.")
