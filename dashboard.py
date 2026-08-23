@@ -356,47 +356,46 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
-    # --- Check pending trades ---
+    # --- Check pending trades (Fixed Multi-Candle Scan) ---
     for trade in st.session_state.trade_history_log:
         if trade["outcome"] == "PENDING":
             trade_symbol = trade["symbol"]
-            if trade_symbol == selected_symbol:
-                curr_high, curr_low, curr_close = high_p, low_p, close_p
-            else:
-                temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=5)
-                if not temp_df.empty:
-                    curr_high = temp_df["High"].iloc[-1]
-                    curr_low = temp_df["Low"].iloc[-1]
-                    curr_close = temp_df["Close"].iloc[-1]
-                else:
-                    continue
-
-            entry = trade["entry_price"]
-            sl = trade["stop_loss"]
-            tp = trade["tp1"]
-            
-            if trade["direction"] == "LONG":
-                if curr_high >= tp:
-                    trade["outcome"] = "WIN"
-                    trade["exit_price"] = tp
-                    trade["pnl_percent"] = round(((tp - entry) / entry) * 100, 2)
-                    trade["status"] = "Closed"
-                elif curr_low <= sl:
-                    trade["outcome"] = "LOSS"
-                    trade["exit_price"] = sl
-                    trade["pnl_percent"] = round(((sl - entry) / entry) * 100, 2)
-                    trade["status"] = "Closed"
-            elif trade["direction"] == "SHORT":
-                if curr_low <= tp:
-                    trade["outcome"] = "WIN"
-                    trade["exit_price"] = tp
-                    trade["pnl_percent"] = round(((entry - tp) / entry) * 100, 2)
-                    trade["status"] = "Closed"
-                elif curr_high >= sl:
-                    trade["outcome"] = "LOSS"
-                    trade["exit_price"] = sl
-                    trade["pnl_percent"] = round(((entry - sl) / entry) * 100, 2)
-                    trade["status"] = "Closed"
+            temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=15)
+            if not temp_df.empty:
+                for idx, row in temp_df.iterrows():
+                    curr_high = row["High"]
+                    curr_low = row["Low"]
+                    
+                    entry = trade["entry_price"]
+                    sl = trade["stop_loss"]
+                    tp = trade["tp1"]
+                    
+                    if trade["direction"] == "LONG":
+                        if curr_high >= tp:
+                            trade["outcome"] = "WIN"
+                            trade["exit_price"] = tp
+                            trade["pnl_percent"] = round(((tp - entry) / entry) * 100, 2)
+                            trade["status"] = "Closed"
+                            break
+                        elif curr_low <= sl:
+                            trade["outcome"] = "LOSS"
+                            trade["exit_price"] = sl
+                            trade["pnl_percent"] = round(((sl - entry) / entry) * 100, 2)
+                            trade["status"] = "Closed"
+                            break
+                    elif trade["direction"] == "SHORT":
+                        if curr_low <= tp:
+                            trade["outcome"] = "WIN"
+                            trade["exit_price"] = tp
+                            trade["pnl_percent"] = round(((entry - tp) / entry) * 100, 2)
+                            trade["status"] = "Closed"
+                            break
+                        elif curr_high >= sl:
+                            trade["outcome"] = "LOSS"
+                            trade["exit_price"] = sl
+                            trade["pnl_percent"] = round(((entry - sl) / entry) * 100, 2)
+                            trade["status"] = "Closed"
+                            break
                     
     save_persistent_history(st.session_state.trade_history_log)
 
