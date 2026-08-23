@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from sklearn.preprocessing import StandardScaler
-from streamlit_autorefresh import st_autorefresh  # <-- 1. Yahan library import ki hai
+from streamlit_autorefresh import st_autorefresh
 
 # ==========================================
 # 2. STREAMLIT CONFIG & PERSISTENT CSV SETUP
@@ -18,7 +18,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# <-- 2. Yahan Auto-Refresh lagaya hai (Har 5 seconds / 5000ms baad page rerun hoga)
 count = st_autorefresh(interval=5000, limit=None, key="research_lab_auto_refresh")
 
 CSV_FILE = "signal_history.csv"
@@ -59,7 +58,6 @@ class TenPaperResearchLab:
         self.target_vol = target_vol
         self.scaler = StandardScaler()
         
-        # 12 Quantitative Papers & Metrics Formulas
         self.feature_names = [
             "HAWKES", "BOOK_IMB", "TAKER_FLOW", "QUANT_IMPLY", 
             "BAYESIAN", "QUANTILES", "TARGET_INV", "ADAPT_CONF", 
@@ -80,78 +78,61 @@ class TenPaperResearchLab:
         returns_h = (df["Close"].iloc[-1] - df["Close"].iloc[-5]) / (df["Close"].iloc[-5] + 1e-8)
         delta_p = df["Close"].iloc[-1] - df["Close"].iloc[-2]
 
-        # 1. Hawkes Intensity Process
         vol_changes = df["Volume"].pct_change().dropna().values
         hawkes_intensity = (np.mean(vol_changes[-3:]) / (np.mean(vol_changes[-15:]) + 1e-8)) if len(vol_changes) >= 15 else 1.0
         results["HAWKES"] = np.clip((hawkes_intensity - 1.0) * np.sign(returns_h), -1, 1)
 
-        # 2. Book Imbalance
         results["BOOK_IMB"] = (bid_vol - ask_vol) / (bid_vol + ask_vol + 1e-8)
 
-        # 3. Taker Flow
         taker_buy = df["Volume"].iloc[-1] * (1.0 if delta_p > 0 else 0.3)
         taker_sell = df["Volume"].iloc[-1] * (1.0 if delta_p <= 0 else 0.3)
         results["TAKER_FLOW"] = (taker_buy - taker_sell) / (taker_buy + taker_sell + 1e-8)
 
-        # 4. Quantities Imply
         depth_skew = (bids[0, 1] - asks[0, 1]) / (bids[0, 1] + asks[0, 1] + 1e-8)
         results["QUANT_IMPLY"] = np.clip(depth_skew * 1.5, -1, 1)
 
-        # 5. Bayesian Probability
         prior = 0.745
         likelihood = 1.0 if results["BOOK_IMB"] > 0 else 0.25
         posterior = (likelihood * prior) / ((likelihood * prior) + ((1 - likelihood) * (1 - prior)) + 1e-8)
         results["BAYESIAN"] = np.clip((posterior - 0.5) * 2.0, -1, 1)
 
-        # 6. Quantiles Imply
         q90 = returns.quantile(0.90) if len(returns) > 5 else 0.01
         q10 = returns.quantile(0.10) if len(returns) > 5 else -0.01
         results["QUANTILES"] = np.clip((returns_h - q10) / (q90 - q10 + 1e-8) * 2.0 - 1.0, -1, 1)
 
-        # 7. Target versus Invalidation Threshold
         target_diff = delta_p / (df["Close"].iloc[-1] + 1e-8)
         results["TARGET_INV"] = 1.0 if target_diff >= 0.0006 else (-1.0 if target_diff <= -0.0006 else 0.0)
 
-        # 8. Adaptive Conformal Band Crosses Zero
         ma_fast = df["Close"].rolling(3).mean().iloc[-1]
         ma_slow = df["Close"].rolling(10).mean().iloc[-1]
         results["ADAPT_CONF"] = np.clip((ma_fast - ma_slow) / (realized_vol * mid_price + 1e-8), -1, 1)
 
-        # 9. Fractional Kelly Risk
         win_prob = 0.55 + (0.15 * np.sign(results["BOOK_IMB"]))
         kelly_fraction = win_prob - ((1 - win_prob) / 1.5)
         results["FRAC_KELLY"] = np.clip(kelly_fraction * 2.0 * np.sign(returns_h), -1, 1)
 
-        # 10. RMT Market Dominance
         rmt_dom = (abs(returns_h) / (realized_vol * np.sqrt(5) + 1e-8)) / 3.0
         results["RMT_DOM"] = np.clip(rmt_dom * np.sign(returns_h), -1, 1)
 
-        # 11. Conformal Interval Crosses Zero
         conformal_spread = realized_vol * 1.96
         upper_b = mid_price * (1 + conformal_spread)
         lower_b = mid_price * (1 - conformal_spread)
         results["CONF_CROSS"] = 1.0 if mid_price > (upper_b + lower_b) / 2 else (-1.0 if mid_price < (upper_b + lower_b) / 2 else 0.0)
 
-        # 12. Quantiles Reward / Risk Filter
         rr_ratio = abs(q90) / (abs(q10) + 1e-8)
         results["REWARD_RISK"] = 1.0 if rr_ratio >= 1.2 else (-1.0 if rr_ratio < 0.8 else 0.0)
 
         return results
 
-    def calculate_all_signals(self, df, bids, asks, current_inventory=0, performance_history=None):
+    def calculate_all_signals(self, df, bids, asks):
         results = self.extract_features(df, bids, asks)
         feature_vector = np.array([results[k] for k in self.feature_names]).reshape(1, -1)
-        
         weight_vector = np.array(list(self.dynamic_weights.values()))
         final_score = float(np.dot(feature_vector[0], weight_vector))
-
         return results, final_score, self.dynamic_weights
 
 
 class PowerTradingRiskEngine:
-    def __init__(self):
-        pass
-
     def calculate_risk_metrics(self, liquidation_volumes, displayed_vol, cancelled_vol, time_exists, obs_window, open_interest, leverage, volatility):
         total_ltz = np.sum(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
         max_ltz = np.max(liquidation_volumes) if len(liquidation_volumes) > 0 else 0.0
@@ -277,11 +258,12 @@ bids, asks = fetch_order_book_depth(selected_symbol)
 # ==========================================
 if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     lab = TenPaperResearchLab()
-    paper_results, final_score, evolved_weights = lab.calculate_all_signals(
-        df, bids, asks, current_inventory=0, performance_history=st.session_state.trade_history_log
-    )
+    paper_results, final_score, evolved_weights = lab.calculate_all_signals(df, bids, asks)
 
     close_p = df["Close"].iloc[-1]
+    high_p = df["High"].iloc[-1]
+    low_p = df["Low"].iloc[-1]
+    
     atr_val = (df["High"] - df["Low"]).rolling(14).mean().iloc[-1]
     if np.isnan(atr_val): 
         atr_val = close_p * 0.005
@@ -326,34 +308,53 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
+    # --- BUG FIX: Check all pending trades using their respective latest market price ---
     for trade in st.session_state.trade_history_log:
-        if trade["outcome"] == "PENDING" and trade["symbol"] == selected_symbol:
-            curr_price = close_p
+        if trade["outcome"] == "PENDING":
+            trade_symbol = trade["symbol"]
+            
+            # Fetch latest price for this specific trade's symbol if it's different from current view
+            if trade_symbol == selected_symbol:
+                curr_high, curr_low, curr_close = high_p, low_p, close_p
+            else:
+                # Quick fetch for other coin symbols in history
+                temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=5)
+                if not temp_df.empty:
+                    curr_high = temp_df["High"].iloc[-1]
+                    curr_low = temp_df["Low"].iloc[-1]
+                    curr_close = temp_df["Close"].iloc[-1]
+                else:
+                    continue
+
             entry = trade["entry_price"]
             sl = trade["stop_loss"]
             tp = trade["tp1"]
+            
             if trade["direction"] == "LONG":
-                if curr_price >= tp:
+                # Check if High hit TP or Low hit SL
+                if curr_high >= tp:
                     trade["outcome"] = "WIN"
-                    trade["exit_price"] = curr_price
-                    trade["pnl_percent"] = round(((curr_price - entry) / entry) * 100, 2)
+                    trade["exit_price"] = tp
+                    trade["pnl_percent"] = round(((tp - entry) / entry) * 100, 2)
                     trade["status"] = "Closed"
-                elif curr_price <= sl:
+                elif curr_low <= sl:
                     trade["outcome"] = "LOSS"
-                    trade["exit_price"] = curr_price
-                    trade["pnl_percent"] = round(((curr_price - entry) / entry) * 100, 2)
+                    trade["exit_price"] = sl
+                    trade["pnl_percent"] = round(((sl - entry) / entry) * 100, 2)
                     trade["status"] = "Closed"
             elif trade["direction"] == "SHORT":
-                if curr_price <= tp:
+                # Check if Low hit TP or High hit SL
+                if curr_low <= tp:
                     trade["outcome"] = "WIN"
-                    trade["exit_price"] = curr_price
-                    trade["pnl_percent"] = round(((entry - curr_price) / entry) * 100, 2)
+                    trade["exit_price"] = tp
+                    trade["pnl_percent"] = round(((entry - tp) / entry) * 100, 2)
                     trade["status"] = "Closed"
-                elif curr_price >= sl:
+                elif curr_high >= sl:
                     trade["outcome"] = "LOSS"
-                    trade["exit_price"] = curr_price
-                    trade["pnl_percent"] = round(((entry - curr_price) / entry) * 100, 2)
+                    trade["exit_price"] = sl
+                    trade["pnl_percent"] = round(((entry - sl) / entry) * 100, 2)
                     trade["status"] = "Closed"
+                    
     save_persistent_history(st.session_state.trade_history_log)
 
     risk_engine = PowerTradingRiskEngine()
@@ -555,3 +556,4 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
 
 else:
     st.warning("⚠️ Data pipeline initializing or connection restricted. Please refresh.")
+    
