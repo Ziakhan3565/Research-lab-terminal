@@ -286,7 +286,7 @@ def fetch_klines_data(symbol, tf_key, limit=100):
         return df.reset_index()[["Time", "Open", "High", "Low", "Close", "Volume"]]
     except Exception:
         dates = pd.date_range(end=datetime.datetime.now(), periods=limit, freq=binance_tf)
-        base_p = 60000.0 if "BTC" in symbol else (3000.0 if "ETH" in symbol else 200..0)
+        base_p = 60000.0 if "BTC" in symbol else (3000.0 if "ETH" in symbol else 200.0)
         closes = base_p + np.cumsum(np.random.normal(0, 5, limit))
         return pd.DataFrame({
             "Time": dates,
@@ -329,7 +329,7 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     direction = "LONG" if final_score >= 0.12 else ("SHORT" if final_score <= -0.12 else "NEUTRAL")
     confidence = int(min(max(abs(final_score) * 100, 20), 99))
 
-    risk_distance = 1.5 * atr_val  # Thoda wide rakha hai taaki noise se trade foran hit na ho
+    risk_distance = 1.5 * atr_val
 
     if direction == "LONG":
         sl_val = close_p - risk_distance
@@ -375,13 +375,11 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
             st.session_state.trade_history_log.insert(0, new_trade)
             save_persistent_history(st.session_state.trade_history_log)
 
-    # --- Strict Pending Trade Evaluation (Fixing False Losses) ---
     for trade in st.session_state.trade_history_log:
         if trade["outcome"] == "PENDING":
             trade_symbol = trade["symbol"]
             temp_df = fetch_klines_data(trade_symbol, trade["timeframe"], limit=10)
             if not temp_df.empty:
-                # Sirf pichli closed candles ko check karein taaki live flickering se false loss na ho
                 historical_candles = temp_df.iloc[:-1] if len(temp_df) > 1 else temp_df
                 for idx, row in historical_candles.iterrows():
                     curr_high = row["High"]
@@ -420,7 +418,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
                     
     save_persistent_history(st.session_state.trade_history_log)
 
-    # --- AUTOMATIC RETRAINING CHECK ---
     closed_count = len([t for t in st.session_state.trade_history_log if t["outcome"] in ["WIN", "LOSS"]])
     if closed_count > 0 and closed_count % 100 == 0:
         milestone_key = f"trained_at_{closed_count}"
@@ -438,9 +435,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         open_interest=150000.0, leverage=20.0, volatility=df["Close"].pct_change().std() + 1e-8
     )
 
-    # ==========================================
-    # 7. TOP HEADER STATUS BAR
-    # ==========================================
     dir_color = "#00e676" if direction == "LONG" else ("#ff5252" if direction == "SHORT" else "#38bdf8")
     mins_rem, secs_rem = divmod(time_remaining, 60)
     ml_status_text = "🟢 Active (Auto-Train)" if ml_model is not None else "🟡 Math Only"
@@ -454,9 +448,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
     </div>
     """, unsafe_allow_html=True)
 
-    # ==========================================
-    # 8. TRADE SIGNAL PANEL & METRICS
-    # ==========================================
     col_sig, col_m1, col_m2, col_m3, col_m4 = st.columns([1.2, 1, 1, 1, 1])
     
     with col_sig:
@@ -482,9 +473,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         st.markdown(f'<div class="metric-card"><div class="metric-label">Squeeze Risk</div><div class="metric-val-red">{risk_metrics["Squeeze_Risk"]:.2f}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="metric-card"><div class="metric-label">Market Risk</div><div class="metric-val-red">{risk_metrics["Market_Risk"]:.2f}</div></div>', unsafe_allow_html=True)
 
-    # ==========================================
-    # 9. CHART & MICROSTRUCTURE SECTION
-    # ==========================================
     col_chart, col_risk_panel = st.columns([2.5, 1])
     with col_chart:
         st.subheader(f"Price Trajectory & Levels ({selected_symbol})")
@@ -525,9 +513,6 @@ if not df.empty and len(df) >= 3 and len(bids) > 0 and len(asks) > 0:
         </div>
         """, unsafe_allow_html=True)
 
-    # ==========================================
-    # 10. PERFORMANCE & HISTORY SECTION
-    # ==========================================
     st.markdown("---")
     st.subheader("📊 Performance Summary & Win Rate")
 
