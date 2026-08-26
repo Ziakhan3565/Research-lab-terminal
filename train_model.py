@@ -1,724 +1,135 @@
-import os
 import json
+import os
+import shutil
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
-
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-)
-
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from xgboost import XGBClassifier
 
-
-# ============================================================
-# FILES
-# ============================================================
+from src.feature_pipeline import FEATURES
 
 MARKET_DATA_FILE = "market_data_log.csv"
 TRADE_FEEDBACK_FILE = "trade_feedback.csv"
-
 MODEL_FILE = "xgboost_obi_model.pkl"
 MODEL_META_FILE = "model_metadata.json"
-
 CANDIDATE_MODEL_FILE = "xgboost_candidate.pkl"
 
 RETRAIN_EVERY = 20
+MIN_MARKET_ROWS = 200
+MIN_FEEDBACK_ROWS = 20
+MIN_ACCEPTABLE_ACCURACY = 0.52
 
 
-# ============================================================
-# MODEL FEATURES
-# ============================================================
-
-FEATURES = [
-    "top20_bid_sum",
-    "top20_ask_sum",
-    "top50_bid_sum",
-    "top50_ask_sum",
-    "obi_top20",
-    "obi_top50",
-    "spread",
-    "spread_pct",
-    "BOOK_IMB",
-    "OFI",
-    "TAKER_FLOW",
-    "QUANT_IMPLY",
-    "ADAPT_CONF",
-    "BAYESIAN",
-    "FOURIER_TREND",
-    "EMA_TREND",
-    "VWAP_DISTANCE",
-    "VOLATILITY",
-]
-
-
-# ============================================================
-# FEATURE ENGINEERING
-# ============================================================
-
-def build_features(df):
-
+def clean_frame(df):
     df = df.copy()
-
-    if "symbol" not in df.columns:
-        raise ValueError(
-            "symbol column missing"
-        )
-
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"],
-        errors="coerce",
-    )
-
-    df = df.sort_values(
-        ["symbol", "timestamp"]
-    ).reset_index(
-        drop=True
-    )
-
-    # --------------------------------------------------------
-    # BASIC FEATURES
-    # --------------------------------------------------------
-
-    df["bid_ask_ratio"] = (
-        df["top20_bid_sum"]
-        /
-        (
-            df["top20_ask_sum"]
-            + 1e-8
-        )
-    )
-
-    df["total_depth20"] = (
-        df["top20_bid_sum"]
-        +
-        df["top20_ask_sum"]
-    )
-
-    df["total_depth50"] = (
-        df["top50_bid_sum"]
-        +
-        df["top50_ask_sum"]
-    )
-
-    # --------------------------------------------------------
-    # RETURNS
-    # --------------------------------------------------------
-
-    df["returns"] = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .pct_change()
-        .fillna(0)
-    )
-
-    df["realized_vol"] = (
-        df.groupby("symbol")[
-            "returns"
-        ]
-        .transform(
-            lambda x:
-            x.rolling(
-                20,
-                min_periods=5,
-            ).std()
-        )
-        .fillna(0)
-    )
-
-    # --------------------------------------------------------
-    # BOOK IMBALANCE
-    # --------------------------------------------------------
-
-    df["BOOK_IMB"] = (
-        df["top20_bid_sum"]
-        -
-        df["top20_ask_sum"]
-    ) / (
-        df["top20_bid_sum"]
-        +
-        df["top20_ask_sum"]
-        +
-        1e-8
-    )
-
-    # --------------------------------------------------------
-    # OFI
-    # --------------------------------------------------------
-
-    prev_bid = (
-        df.groupby("symbol")[
-            "top20_bid_sum"
-        ]
-        .shift(1)
-    )
-
-    prev_ask = (
-        df.groupby("symbol")[
-            "top20_ask_sum"
-        ]
-        .shift(1)
-    )
-
-    raw_ofi = (
-        (
-            df["top20_bid_sum"]
-            - prev_bid
-        )
-        -
-        (
-            df["top20_ask_sum"]
-            - prev_ask
-        )
-    )
-
-    depth_scale = (
-        df["top20_bid_sum"]
-        +
-        df["top20_ask_sum"]
-        +
-        1e-8
-    )
-
-    df["OFI"] = (
-        raw_ofi
-        / depth_scale
-    ).clip(
-        -1,
-        1,
-    ).fillna(0)
-
-    # --------------------------------------------------------
-    # TAKER FLOW
-    #
-    # Collector currently does not have true trade-by-trade
-    # aggressor data. Therefore this remains conservative.
-    # --------------------------------------------------------
-
-    delta = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .diff()
-        .fillna(0)
-    )
-
-    estimated_buy = np.where(
-        delta > 0,
-        1.0,
-        0.3,
-    )
-
-    estimated_sell = np.where(
-        delta <= 0,
-        1.0,
-        0.3,
-    )
-
-    df["TAKER_FLOW"] = (
-        estimated_buy
-        -
-        estimated_sell
-    ) / (
-        estimated_buy
-        +
-        estimated_sell
-        +
-        1e-8
-    )
-
-    # --------------------------------------------------------
-    # QUANT IMPLY
-    # --------------------------------------------------------
-
-    best_bid_size = (
-        df["top20_bid_sum"]
-        / 20.0
-    )
-
-    best_ask_size = (
-        df["top20_ask_sum"]
-        / 20.0
-    )
-
-    depth_skew = (
-        best_bid_size
-        -
-        best_ask_size
-    ) / (
-        best_bid_size
-        +
-        best_ask_size
-        +
-        1e-8
-    )
-
-    df["QUANT_IMPLY"] = (
-        depth_skew * 1.5
-    ).clip(
-        -1,
-        1,
-    )
-
-    # --------------------------------------------------------
-    # ADAPT CONF
-    # --------------------------------------------------------
-
-    ma3 = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .transform(
-            lambda x:
-            x.rolling(
-                3,
-                min_periods=1,
-            ).mean()
-        )
-    )
-
-    ma10 = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .transform(
-            lambda x:
-            x.rolling(
-                10,
-                min_periods=1,
-            ).mean()
-        )
-    )
-
-    df["ADAPT_CONF"] = (
-        (
-            ma3 - ma10
-        )
-        /
-        (
-            df["realized_vol"]
-            *
-            df["current_price"]
-            +
-            1e-8
-        )
-    ).clip(
-        -1,
-        1,
-    )
-
-    # --------------------------------------------------------
-    # BAYESIAN
-    # --------------------------------------------------------
-
-    prior = 0.745
-
-    likelihood = np.where(
-        df["BOOK_IMB"] > 0,
-        1.0,
-        0.25,
-    )
-
-    numerator = (
-        likelihood * prior
-    )
-
-    denominator = (
-        numerator
-        +
-        (
-            (1 - likelihood)
-            *
-            (1 - prior)
-        )
-        +
-        1e-8
-    )
-
-    posterior = (
-        numerator
-        /
-        denominator
-    )
-
-    df["BAYESIAN"] = (
-        (posterior - 0.5)
-        * 2
-    ).clip(
-        -1,
-        1,
-    )
-
-    # --------------------------------------------------------
-    # ROLLING FOURIER
-    # --------------------------------------------------------
-
-    def rolling_fourier(series):
-
-        values = series.values.astype(float)
-
-        output = np.zeros(
-            len(values)
-        )
-
-        window = 32
-
-        for i in range(
-            len(values)
-        ):
-
-            start = max(
-                0,
-                i - window + 1,
-            )
-
-            segment = values[
-                start:i + 1
-            ]
-
-            if len(segment) < 15:
-                continue
-
-            centered = (
-                segment
-                -
-                np.mean(segment)
-            )
-
-            fft_values = np.fft.fft(
-                centered
-            )
-
-            n = len(
-                fft_values
-            )
-
-            keep = max(
-                1,
-                int(
-                    n * 0.15
-                ),
-            )
-
-            filtered = np.zeros_like(
-                fft_values
-            )
-
-            filtered[:keep] = (
-                fft_values[:keep]
-            )
-
-            filtered[-keep:] = (
-                fft_values[-keep:]
-            )
-
-            curve = np.real(
-                np.fft.ifft(
-                    filtered
-                )
-            )
-
-            trend = (
-                curve[-1]
-                -
-                curve[-2]
-            )
-
-            output[i] = trend
-
-        return pd.Series(
-            output,
-            index=series.index,
-        )
-
-    df["FOURIER_TREND"] = (
-        df.groupby(
-            "symbol"
-        )[
-            "current_price"
-        ]
-        .transform(
-            rolling_fourier
-        )
-    )
-
-    # Normalize Fourier
-
-    df["FOURIER_TREND"] = (
-        df["FOURIER_TREND"]
-        /
-        (
-            df["current_price"]
-            *
-            df["realized_vol"]
-            +
-            1e-8
-        )
-    ).clip(
-        -1,
-        1,
-    )
-
-    # --------------------------------------------------------
-    # EMA
-    # --------------------------------------------------------
-
-    df["ema20"] = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .transform(
-            lambda x:
-            x.ewm(
-                span=20,
-                adjust=False,
-            ).mean()
-        )
-    )
-
-    df["ema50"] = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .transform(
-            lambda x:
-            x.ewm(
-                span=50,
-                adjust=False,
-            ).mean()
-        )
-    )
-
-    df["EMA_TREND"] = (
-        (
-            df["ema20"]
-            -
-            df["ema50"]
-        )
-        /
-        (
-            df["current_price"]
-            +
-            1e-8
-        )
-    ) * 100
-
-    df["EMA_TREND"] = (
-        df["EMA_TREND"]
-        .clip(
-            -1,
-            1,
-        )
-    )
-
-    # --------------------------------------------------------
-    # VWAP
-    # --------------------------------------------------------
-
-    # Collector currently has no actual volume.
-    # Use depth as a conservative proxy.
-
-    volume_proxy = (
-        df["top20_bid_sum"]
-        +
-        df["top20_ask_sum"]
-    )
-
-    cumulative_price_volume = (
-        df.groupby("symbol")
-        .apply(
-            lambda g:
-            (
-                g["current_price"]
-                *
-                volume_proxy.loc[
-                    g.index
-                ]
-            ).cumsum()
-        )
-        .reset_index(
-            level=0,
-            drop=True,
-        )
-    )
-
-    cumulative_volume = (
-        df.groupby("symbol")
-        [volume_proxy.name if volume_proxy.name else "current_price"]
-        if False
-        else None
-    )
-
-    # Safer explicit calculation
-
-    temp_pv = (
-        df["current_price"]
-        *
-        volume_proxy
-    )
-
-    df["_cum_pv"] = (
-        temp_pv.groupby(
-            df["symbol"]
-        ).cumsum()
-    )
-
-    df["_cum_volume"] = (
-        volume_proxy.groupby(
-            df["symbol"]
-        ).cumsum()
-    )
-
-    df["vwap"] = (
-        df["_cum_pv"]
-        /
-        (
-            df["_cum_volume"]
-            + 1e-8
-        )
-    )
-
-    df["VWAP_DISTANCE"] = (
-        (
-            df["current_price"]
-            -
-            df["vwap"]
-        )
-        /
-        (
-            df["vwap"]
-            + 1e-8
-        )
-    ) * 100
-
-    df["VWAP_DISTANCE"] = (
-        df["VWAP_DISTANCE"]
-        .clip(
-            -1,
-            1,
-        )
-    )
-
-    df["VOLATILITY"] = (
-        df["realized_vol"]
-        * 100
-    ).clip(
-        0,
-        1,
-    )
-
+    for col in FEATURES:
+        if col not in df.columns:
+            df[col] = 0.0
+        df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
 
-# ============================================================
-# TARGET
-# ============================================================
+def market_training_data():
+    if not os.path.exists(MARKET_DATA_FILE):
+        return pd.DataFrame(), pd.Series(dtype=int)
 
-def build_target(
-    df,
-    horizon_rows=5,
-    threshold=0.0005,
-):
+    df = pd.read_csv(MARKET_DATA_FILE)
+    if len(df) < MIN_MARKET_ROWS:
+        return pd.DataFrame(), pd.Series(dtype=int)
 
-    df = df.copy()
+    df = clean_frame(df)
+    if "symbol" not in df or "timestamp" not in df or "current_price" not in df:
+        return pd.DataFrame(), pd.Series(dtype=int)
 
-    df["future_price"] = (
-        df.groupby("symbol")[
-            "current_price"
-        ]
-        .shift(
-            -horizon_rows
-        )
-    )
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    df["current_price"] = pd.to_numeric(df["current_price"], errors="coerce")
+    df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
 
+    # Five collector observations ~= 25 seconds at a 5-second interval.
+    # This is only a baseline market target; trade feedback is the stronger signal.
+    df["future_price"] = df.groupby("symbol")["current_price"].shift(-5)
     df["future_return"] = (
-        (
-            df["future_price"]
-            -
-            df["current_price"]
-        )
-        /
-        (
-            df["current_price"]
-            + 1e-8
-        )
+        (df["future_price"] - df["current_price"])
+        / (df["current_price"] + 1e-8)
+    )
+    df["target"] = (df["future_return"] > 0.0005).astype(int)
+    df = df.dropna(subset=FEATURES + ["future_price"])
+
+    return df[FEATURES], df["target"].astype(int)
+
+
+def feedback_training_data():
+    if not os.path.exists(TRADE_FEEDBACK_FILE):
+        return pd.DataFrame(), pd.Series(dtype=int)
+
+    df = pd.read_csv(TRADE_FEEDBACK_FILE)
+    if df.empty:
+        return pd.DataFrame(), pd.Series(dtype=int)
+
+    df = df[df.get("status", "") == "CLOSED"].copy()
+    if df.empty:
+        return pd.DataFrame(), pd.Series(dtype=int)
+
+    df = clean_frame(df)
+
+    # Model predicts the direction that would have been correct at entry.
+    # Long WIN -> bullish(1), Long LOSS -> bearish(0)
+    # Short WIN -> bearish(0), Short LOSS -> bullish(1)
+    direction = df["direction"].astype(str).str.upper()
+    outcome = df["outcome"].astype(str).str.upper()
+    df["target"] = np.where(
+        direction.str.contains("LONG"),
+        (outcome == "WIN").astype(int),
+        (outcome == "LOSS").astype(int),
     )
 
-    # 1 = bullish
-    # 0 = bearish/neutral
-
-    df["target"] = (
-        df["future_return"]
-        >
-        threshold
-    ).astype(int)
-
-    return df
+    return df[FEATURES], df["target"].astype(int)
 
 
-# ============================================================
-# CHRONOLOGICAL SPLIT
-# ============================================================
+def combined_training_data():
+    market_X, market_y = market_training_data()
+    feedback_X, feedback_y = feedback_training_data()
 
-def chronological_split(
-    X,
-    y,
-):
+    parts_x, parts_y, weights = [], [], []
 
+    if not market_X.empty:
+        parts_x.append(market_X)
+        parts_y.append(market_y)
+        weights.extend([1.0] * len(market_X))
+
+    if not feedback_X.empty:
+        # Real completed trades get stronger influence than generic market samples.
+        parts_x.append(feedback_X)
+        parts_y.append(feedback_y)
+        weights.extend([5.0] * len(feedback_X))
+
+    if not parts_x:
+        return pd.DataFrame(columns=FEATURES), pd.Series(dtype=int), np.array([])
+
+    X = pd.concat(parts_x, ignore_index=True).replace([np.inf, -np.inf], np.nan).fillna(0)
+    y = pd.concat(parts_y, ignore_index=True).astype(int)
+    return X, y, np.asarray(weights, dtype=float)
+
+
+def chronological_split(X, y, weights):
+    order = np.arange(len(X))
+    # Combined data is already chronological within each source; keep a final holdout.
     n = len(X)
-
-    train_end = int(
-        n * 0.70
-    )
-
-    validation_end = int(
-        n * 0.85
-    )
-
-    X_train = X.iloc[
-        :train_end
-    ]
-
-    y_train = y.iloc[
-        :train_end
-    ]
-
-    X_validation = X.iloc[
-        train_end:validation_end
-    ]
-
-    y_validation = y.iloc[
-        train_end:validation_end
-    ]
-
-    X_test = X.iloc[
-        validation_end:
-    ]
-
-    y_test = y.iloc[
-        validation_end:
-    ]
+    train_end = max(1, int(n * 0.70))
+    valid_end = max(train_end + 1, int(n * 0.85))
+    valid_end = min(valid_end, n)
 
     return (
-        X_train,
-        y_train,
-        X_validation,
-        y_validation,
-        X_test,
-        y_test,
+        X.iloc[:train_end], y.iloc[:train_end], weights[:train_end],
+        X.iloc[train_end:valid_end], y.iloc[train_end:valid_end],
+        X.iloc[valid_end:], y.iloc[valid_end:],
     )
 
 
-# ============================================================
-# MODEL
-# ============================================================
-
 def create_model():
-
     return XGBClassifier(
         n_estimators=250,
         learning_rate=0.03,
@@ -734,439 +145,169 @@ def create_model():
     )
 
 
-# ============================================================
-# EVALUATION
-# ============================================================
-
-def evaluate_model(
-    model,
-    X,
-    y,
-):
-
-    probabilities = model.predict_proba(
-        X
-    )[:, 1]
-
-    predictions = (
-        probabilities >= 0.5
-    ).astype(int)
-
+def evaluate_model(model, X, y):
+    if len(X) == 0 or y.nunique() < 2:
+        return {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+    p = model.predict_proba(X)[:, 1]
+    pred = (p >= 0.5).astype(int)
     return {
-        "accuracy": float(
-            accuracy_score(
-                y,
-                predictions,
-            )
-        ),
-
-        "precision": float(
-            precision_score(
-                y,
-                predictions,
-                zero_division=0,
-            )
-        ),
-
-        "recall": float(
-            recall_score(
-                y,
-                predictions,
-                zero_division=0,
-            )
-        ),
-
-        "f1": float(
-            f1_score(
-                y,
-                predictions,
-                zero_division=0,
-            )
-        ),
+        "accuracy": float(accuracy_score(y, pred)),
+        "precision": float(precision_score(y, pred, zero_division=0)),
+        "recall": float(recall_score(y, pred, zero_division=0)),
+        "f1": float(f1_score(y, pred, zero_division=0)),
     }
 
 
-# ============================================================
-# TRAIN INITIAL MODEL
-# ============================================================
-
-def train_initial_model():
-
-    if not os.path.exists(
-        MARKET_DATA_FILE
-    ):
-        print(
-            "❌ market_data_log.csv not found."
-        )
+def train_model():
+    X, y, weights = combined_training_data()
+    if len(X) < MIN_MARKET_ROWS and len(X) < MIN_FEEDBACK_ROWS:
+        print("Not enough training data.")
         return False
 
-    df = pd.read_csv(
-        MARKET_DATA_FILE
-    )
-
-    if len(df) < 200:
-        print(
-            "❌ Not enough data. "
-            "Collect more market data first."
-        )
+    if y.nunique() < 2:
+        print("Need both bullish and bearish targets before training.")
         return False
-
-    df = build_features(
-        df
-    )
-
-    df = build_target(
-        df,
-        horizon_rows=5,
-        threshold=0.0005,
-    )
-
-    required = (
-        FEATURES
-        +
-        [
-            "current_price",
-            "future_price",
-            "future_return",
-            "target",
-        ]
-    )
-
-    df = df.dropna(
-        subset=required
-    ).copy()
-
-    X = df[
-        FEATURES
-    ]
-
-    y = df[
-        "target"
-    ]
 
     (
-        X_train,
-        y_train,
-        X_validation,
-        y_validation,
-        X_test,
-        y_test,
-    ) = chronological_split(
-        X,
-        y,
-    )
+        X_train, y_train, w_train,
+        X_val, y_val,
+        X_test, y_test,
+    ) = chronological_split(X, y, weights)
+
+    if y_train.nunique() < 2:
+        print("Training split contains only one class.")
+        return False
 
     model = create_model()
-
-    print(
-        "🚀 Training initial XGBoost model..."
-    )
-
     model.fit(
         X_train,
         y_train,
-        eval_set=[
-            (
-                X_validation,
-                y_validation,
-            )
-        ],
+        sample_weight=w_train,
+        eval_set=[(X_val, y_val)] if len(X_val) else None,
         verbose=False,
     )
 
-    metrics = evaluate_model(
-        model,
-        X_test,
-        y_test,
-    )
-
-    print(
-        f"Accuracy : {metrics['accuracy']:.4f}"
-    )
-
-    print(
-        f"Precision: {metrics['precision']:.4f}"
-    )
-
-    print(
-        f"Recall   : {metrics['recall']:.4f}"
-    )
-
-    print(
-        f"F1       : {metrics['f1']:.4f}"
-    )
-
-    joblib.dump(
-        model,
-        MODEL_FILE,
-    )
+    metrics = evaluate_model(model, X_test, y_test)
+    joblib.dump(model, MODEL_FILE)
 
     metadata = {
-        "version": 1,
+        "version": 2,
         "features": FEATURES,
         "metrics": metrics,
-        "training_samples": int(
-            len(X_train)
-        ),
-        "test_samples": int(
-            len(X_test)
-        ),
+        "samples": int(len(X)),
+        "feedback_samples": int(len(feedback_training_data()[0])),
     }
+    Path(MODEL_META_FILE).write_text(json.dumps(metadata, indent=2))
 
-    with open(
-        MODEL_META_FILE,
-        "w",
-    ) as f:
-        json.dump(
-            metadata,
-            f,
-            indent=4,
-        )
-
-    print(
-        f"✅ Model saved: {MODEL_FILE}"
-    )
-
+    print("Initial/normal model trained:", metrics)
     return True
 
 
-# ============================================================
-# RETRAIN AFTER 20 TRADES
-# ============================================================
-
 def retrain_after_20_trades():
-
-    if not os.path.exists(
-        MARKET_DATA_FILE
-    ):
+    if not os.path.exists(TRADE_FEEDBACK_FILE):
         return False
 
-    df = pd.read_csv(
-        MARKET_DATA_FILE
-    )
-
-    if len(df) < 200:
+    feedback = pd.read_csv(TRADE_FEEDBACK_FILE)
+    closed = feedback[feedback.get("status", "") == "CLOSED"]
+    if len(closed) < RETRAIN_EVERY:
         return False
 
-    df = build_features(
-        df
-    )
-
-    df = build_target(
-        df,
-        horizon_rows=5,
-        threshold=0.0005,
-    )
-
-    df = df.dropna(
-        subset=FEATURES
-        +
-        [
-            "future_price",
-            "future_return",
-            "target",
-        ]
-    ).copy()
-
-    X = df[
-        FEATURES
-    ]
-
-    y = df[
-        "target"
-    ]
+    X, y, weights = combined_training_data()
+    if len(X) < MIN_MARKET_ROWS and len(closed) < MIN_FEEDBACK_ROWS:
+        return False
+    if y.nunique() < 2:
+        print("Retrain skipped: only one target class.")
+        return False
 
     (
-        X_train,
-        y_train,
-        X_validation,
-        y_validation,
-        X_test,
-        y_test,
-    ) = chronological_split(
-        X,
-        y,
-    )
+        X_train, y_train, w_train,
+        X_val, y_val,
+        X_test, y_test,
+    ) = chronological_split(X, y, weights)
+
+    if y_train.nunique() < 2:
+        return False
 
     candidate = create_model()
-
     candidate.fit(
         X_train,
         y_train,
-        eval_set=[
-            (
-                X_validation,
-                y_validation,
-            )
-        ],
+        sample_weight=w_train,
+        eval_set=[(X_val, y_val)] if len(X_val) else None,
         verbose=False,
     )
 
-    candidate_metrics = evaluate_model(
-        candidate,
-        X_test,
-        y_test,
-    )
-
-    print(
-        "Candidate model:",
-        candidate_metrics,
-    )
-
-    # --------------------------------------------------------
-    # OLD MODEL
-    # --------------------------------------------------------
-
-    if not os.path.exists(
-        MODEL_FILE
-    ):
-
-        joblib.dump(
-            candidate,
-            MODEL_FILE,
-        )
-
-        return True
-
-    old_model = joblib.load(
-        MODEL_FILE
-    )
-
-    old_metrics = evaluate_model(
-        old_model,
-        X_test,
-        y_test,
-    )
-
-    print(
-        "Old model:",
-        old_metrics,
-    )
-
-    # --------------------------------------------------------
-    # ACCEPTANCE GATE
-    # --------------------------------------------------------
-
+    candidate_metrics = evaluate_model(candidate, X_test, y_test)
     candidate_score = (
-        candidate_metrics["f1"]
-        +
-        candidate_metrics["precision"]
-        +
         candidate_metrics["accuracy"]
+        + candidate_metrics["precision"]
+        + candidate_metrics["f1"]
     )
 
-    old_score = (
-        old_metrics["f1"]
-        +
-        old_metrics["precision"]
-        +
-        old_metrics["accuracy"]
-    )
+    old_score = -1.0
+    old_metrics = None
 
-    if (
-        candidate_score
-        >
-        old_score
-    ):
+    if os.path.exists(MODEL_FILE):
+        try:
+            old = joblib.load(MODEL_FILE)
+            old_metrics = evaluate_model(old, X_test, y_test)
+            old_score = (
+                old_metrics["accuracy"]
+                + old_metrics["precision"]
+                + old_metrics["f1"]
+            )
+        except Exception as exc:
+            print("Old model could not be evaluated:", exc)
 
-        joblib.dump(
-            candidate,
-            MODEL_FILE,
+    accepted = (
+        not os.path.exists(MODEL_FILE)
+        or (
+            candidate_metrics["accuracy"] >= MIN_ACCEPTABLE_ACCURACY
+            and candidate_score > old_score
         )
-
-        print(
-            "✅ Candidate model is better."
-        )
-
-        print(
-            "✅ New model accepted."
-        )
-
-        return True
-
-    print(
-        "⚠️ Candidate model is not better."
     )
 
-    print(
-        "🛡️ Old model kept."
-    )
+    joblib.dump(candidate, CANDIDATE_MODEL_FILE)
 
-    return False
+    if accepted:
+        if os.path.exists(MODEL_FILE):
+            shutil.copy2(MODEL_FILE, MODEL_FILE + ".backup")
+        os.replace(CANDIDATE_MODEL_FILE, MODEL_FILE)
+        print("NEW MODEL ACCEPTED:", candidate_metrics)
+    else:
+        print("OLD MODEL KEPT. Candidate:", candidate_metrics, "Old:", old_metrics)
 
+    metadata = {
+        "version": 2,
+        "last_retrain_closed_trades": int(len(closed)),
+        "candidate_metrics": candidate_metrics,
+        "old_metrics": old_metrics,
+        "accepted": bool(accepted),
+        "features": FEATURES,
+    }
+    Path(MODEL_META_FILE).write_text(json.dumps(metadata, indent=2))
+    return accepted
 
-# ============================================================
-# TRADE COUNTER
-# ============================================================
 
 def count_completed_trades():
-
-    if not os.path.exists(
-        TRADE_FEEDBACK_FILE
-    ):
+    if not os.path.exists(TRADE_FEEDBACK_FILE):
         return 0
-
     try:
-
-        df = pd.read_csv(
-            TRADE_FEEDBACK_FILE
-        )
-
-        if "status" in df.columns:
-
-            df = df[
-                df["status"]
-                ==
-                "CLOSED"
-            ]
-
-        return len(df)
-
+        df = pd.read_csv(TRADE_FEEDBACK_FILE)
+        return int((df.get("status", "") == "CLOSED").sum())
     except Exception:
         return 0
 
 
 def check_and_retrain():
-
     count = count_completed_trades()
-
-    print(
-        f"📊 Completed trades: {count}"
-    )
-
-    if count == 0:
+    if count < RETRAIN_EVERY or count % RETRAIN_EVERY != 0:
         return False
-
-    if count % RETRAIN_EVERY != 0:
-        return False
-
-    print(
-        "🔄 20 completed trades reached."
-    )
-
     return retrain_after_20_trades()
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 if __name__ == "__main__":
-
-    if os.path.exists(
-        MODEL_FILE
-    ):
-
-        print(
-            "Existing model found."
-        )
-
-        print(
-            "Running retraining evaluation..."
-        )
-
+    if os.path.exists(MODEL_FILE):
         retrain_after_20_trades()
-
     else:
-
-        train_initial_model()
+        train_model()
