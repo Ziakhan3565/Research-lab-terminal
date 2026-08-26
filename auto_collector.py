@@ -1,311 +1,135 @@
-import time
-import datetime
+import datetime as dt
 import os
+import time
+from collections import defaultdict, deque
+
 import numpy as np
 import pandas as pd
 import requests
 
+from src.feature_pipeline import (
+    calculate_orderbook_values,
+    normalized_ofi,
+    calculate_research_features,
+)
 
-# ============================================================
-# BINANCE MARKET DATA CONFIGURATION
-# ============================================================
-
-COINS_LIST = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "XMRUSDT",
-    "XRPUSDT",
-    "TAOUSDT",
-]
-
+COINS_LIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XMRUSDT", "XRPUSDT", "TAOUSDT"]
 BINANCE_BASE_URL = "https://api.binance.com"
-
 DEPTH_LIMIT = 50
 COLLECTION_INTERVAL = 5
-
 MARKET_DATA_FILE = "market_data_log.csv"
 
-
-# ============================================================
-# BINANCE ORDER BOOK
-# ============================================================
-
-def fetch_binance_order_book(symbol, depth_limit=DEPTH_LIMIT):
-    """
-    Binance Spot live order book.
-    MEXC yahan use nahi hota.
-    """
-
-    try:
-        url = f"{BINANCE_BASE_URL}/api/v3/depth"
-
-        response = requests.get(
-            url,
-            params={
-                "symbol": symbol,
-                "limit": depth_limit,
-            },
-            timeout=5,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        bids = np.array(data.get("bids", []), dtype=float)
-        asks = np.array(data.get("asks", []), dtype=float)
-
-        if len(bids) == 0 or len(asks) == 0:
-            return None, None
-
-        return bids, asks
-
-    except Exception as e:
-        print(f"❌ Binance order book error [{symbol}]: {e}")
-        return None, None
+price_history = defaultdict(lambda: deque(maxlen=200))
+volume_history = defaultdict(lambda: deque(maxlen=200))
+previous_depth = {}
 
 
-# ============================================================
-# BINANCE PRICE
-# ============================================================
-
-def fetch_binance_price(symbol):
-    try:
-        url = f"{BINANCE_BASE_URL}/api/v3/ticker/price"
-
-        response = requests.get(
-            url,
-            params={"symbol": symbol},
-            timeout=5,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        return float(data["price"])
-
-    except Exception as e:
-        print(f"❌ Binance price error [{symbol}]: {e}")
-        return None
+def binance_get(endpoint, params):
+    r = requests.get(BINANCE_BASE_URL + endpoint, params=params, timeout=5)
+    r.raise_for_status()
+    return r.json()
 
 
-# ============================================================
-# ORDER BOOK FEATURES
-# ============================================================
-
-def calculate_orderbook_features(bids, asks):
-    if bids is None or asks is None:
-        return {}
-
-    if len(bids) == 0 or len(asks) == 0:
-        return {}
-
-    top20_bids = bids[:20]
-    top20_asks = asks[:20]
-
-    top50_bids = bids[:50]
-    top50_asks = asks[:50]
-
-    bid20 = float(np.sum(top20_bids[:, 1]))
-    ask20 = float(np.sum(top20_asks[:, 1]))
-
-    bid50 = float(np.sum(top50_bids[:, 1]))
-    ask50 = float(np.sum(top50_asks[:, 1]))
-
-    total20 = bid20 + ask20
-    total50 = bid50 + ask50
-
-    obi20 = (
-        (bid20 - ask20) / total20
-        if total20 > 0
-        else 0.0
-    )
-
-    obi50 = (
-        (bid50 - ask50) / total50
-        if total50 > 0
-        else 0.0
-    )
-
-    best_bid = float(bids[0, 0])
-    best_ask = float(asks[0, 0])
-
-    spread = best_ask - best_bid
-
-    mid_price = (best_bid + best_ask) / 2.0
-
-    spread_pct = (
-        spread / mid_price
-        if mid_price > 0
-        else 0.0
-    )
-
-    return {
-        "top20_bid_sum": bid20,
-        "top20_ask_sum": ask20,
-        "top50_bid_sum": bid50,
-        "top50_ask_sum": ask50,
-        "obi_top20": obi20,
-        "obi_top50": obi50,
-        "best_bid": best_bid,
-        "best_ask": best_ask,
-        "spread": spread,
-        "spread_pct": spread_pct,
-        "mid_price": mid_price,
-    }
+def fetch_order_book(symbol):
+    data = binance_get("/api/v3/depth", {"symbol": symbol, "limit": DEPTH_LIMIT})
+    return np.asarray(data["bids"], dtype=float), np.asarray(data["asks"], dtype=float)
 
 
-# ============================================================
-# MAIN COLLECTION
-# ============================================================
+def fetch_price(symbol):
+    data = binance_get("/api/v3/ticker/price", {"symbol": symbol})
+    return float(data["price"])
+
+
+def fetch_taker_flow(symbol, limit=100):
+    data = binance_get("/api/v3/aggTrades", {"symbol": symbol, "limit": limit})
+    buy = sum(float(x["q"]) for x in data if not x["m"])
+    sell = sum(float(x["q"]) for x in data if x["m"])
+    return (buy - sell) / (buy + sell + 1e-8)
+
 
 def collect_one_symbol(symbol):
-    price = fetch_binance_price(symbol)
+    try:
+        price = fetch_price(symbol)
+        bids, asks = fetch_order_book(symbol)
+        ob = calculate_orderbook_values(bids, asks)
 
-    bids, asks = fetch_binance_order_book(
-        symbol,
-        DEPTH_LIMIT,
-    )
+        price_history[symbol].append(price)
+        # Binance depth has no candle volume; use recent traded quantity as a volume proxy
+        taker = fetch_taker_flow(symbol)
+        volume_proxy = abs(taker) + 1.0
+        volume_history[symbol].append(volume_proxy)
 
-    if price is None or bids is None or asks is None:
+        prev = previous_depth.get(symbol)
+        ofi = normalized_ofi(
+            prev[0] if prev else None,
+            prev[1] if prev else None,
+            ob["top20_bid_sum"],
+            ob["top20_ask_sum"],
+        )
+        previous_depth[symbol] = (
+            ob["top20_bid_sum"],
+            ob["top20_ask_sum"],
+        )
+
+        research = calculate_research_features(
+            list(price_history[symbol]),
+            list(volume_history[symbol]),
+            ob["top20_bid_sum"],
+            ob["top20_ask_sum"],
+            float(bids[0, 1]),
+            float(asks[0, 1]),
+            ofi,
+            taker,
+        )
+
+        row = {
+            "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "symbol": symbol,
+            "data_source": "BINANCE",
+            "current_price": price,
+            **{k: ob[k] for k in (
+                "top20_bid_sum", "top20_ask_sum", "top50_bid_sum",
+                "top50_ask_sum", "obi_top20", "obi_top50",
+                "best_bid", "best_ask", "spread", "spread_pct"
+            )},
+            **research,
+        }
+        return row
+    except Exception as exc:
+        print(f"Collector error [{symbol}]: {exc}")
         return None
 
-    features = calculate_orderbook_features(
-        bids,
-        asks,
-    )
 
-    if not features:
-        return None
-
-    timestamp = datetime.datetime.utcnow().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
-
-    row = {
-        "timestamp": timestamp,
-        "symbol": symbol,
-
-        # IMPORTANT:
-        # This is live Binance order-book data.
-        "data_source": "BINANCE",
-
-        "timeframe": "LIVE",
-
-        "current_price": price,
-
-        "top20_bid_sum": features["top20_bid_sum"],
-        "top20_ask_sum": features["top20_ask_sum"],
-
-        "top50_bid_sum": features["top50_bid_sum"],
-        "top50_ask_sum": features["top50_ask_sum"],
-
-        "obi_top20": features["obi_top20"],
-        "obi_top50": features["obi_top50"],
-
-        "best_bid": features["best_bid"],
-        "best_ask": features["best_ask"],
-
-        "spread": features["spread"],
-        "spread_pct": features["spread_pct"],
-
-        "mid_price": features["mid_price"],
-    }
-
-    return row
-
-
-# ============================================================
-# CSV WRITER
-# ============================================================
-
-def save_row(row, file_path=MARKET_DATA_FILE):
+def save_row(row):
     if row is None:
         return
-
-    df = pd.DataFrame([row])
-
-    file_exists = os.path.isfile(file_path)
-
-    df.to_csv(
-        file_path,
+    pd.DataFrame([row]).to_csv(
+        MARKET_DATA_FILE,
         mode="a",
-        header=not file_exists,
+        header=not os.path.exists(MARKET_DATA_FILE),
         index=False,
     )
 
 
-# ============================================================
-# CONTINUOUS COLLECTOR
-# ============================================================
-
-def log_auto_data(
-    file_path=MARKET_DATA_FILE,
-    interval=COLLECTION_INTERVAL,
-):
-
-    print("=" * 70)
-    print("BINANCE LIVE ORDER BOOK COLLECTOR")
-    print("=" * 70)
-    print(f"Symbols       : {', '.join(COINS_LIST)}")
-    print(f"Depth         : {DEPTH_LIMIT}")
-    print(f"Interval      : {interval} seconds")
-    print(f"Output        : {file_path}")
-    print("Execution     : NOT HERE")
-    print("Execution API : MEXC will be handled separately")
-    print("=" * 70)
-
-    count = 0
-
+def log_auto_data():
+    print("BINANCE LIVE DATA COLLECTOR | MEXC execution is separate")
     while True:
-
-        cycle_start = time.time()
-
+        started = time.time()
         for symbol in COINS_LIST:
-
             row = collect_one_symbol(symbol)
-
-            if row is not None:
-
-                save_row(row, file_path)
-
-                count += 1
-
+            save_row(row)
+            if row:
                 print(
-                    f"[{count}] "
-                    f"{symbol} | "
-                    f"Price={row['current_price']:.4f} | "
-                    f"OBI20={row['obi_top20']:.4f} | "
-                    f"OBI50={row['obi_top50']:.4f} | "
-                    f"Spread={row['spread']:.6f}"
+                    f"{symbol} price={row['current_price']:.4f} "
+                    f"OBI20={row['obi_top20']:.4f} OFI={row['OFI']:.4f} "
+                    f"TAKER={row['TAKER_FLOW']:.4f}"
                 )
-
             time.sleep(0.25)
+        time.sleep(max(0, COLLECTION_INTERVAL - (time.time() - started)))
 
-        elapsed = time.time() - cycle_start
-
-        remaining = max(
-            0,
-            interval - elapsed,
-        )
-
-        print(
-            f"🔄 Cycle completed | "
-            f"sleep={remaining:.2f}s"
-        )
-
-        time.sleep(remaining)
-
-
-# ============================================================
-# START
-# ============================================================
 
 if __name__ == "__main__":
     try:
         log_auto_data()
-
     except KeyboardInterrupt:
-        print("\n🛑 Collector stopped by user.")
+        print("Collector stopped.")
