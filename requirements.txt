@@ -6,3 +6,5 @@ requests
 streamlit-autorefresh
 xgboost
 scikit-learn
+ccxt
+joblib
